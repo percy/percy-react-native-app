@@ -6,13 +6,13 @@ storybook-rn:
       platformName: iOS
       "appium:platformVersion": "18.4"
       "appium:deviceName": "iPhone 16"
-      "appium:bundleId": "com.apple.Preferences"
+      "appium:bundleId": "com.anonymous.RNStorybookFixture"
       "appium:automationName": XCUITest
       "appium:newCommandTimeout": 30
   storybook:
-    websocketHost: localhost
+    websocketHost: 127.0.0.1
     websocketPort: 7007
-    waitForReadyMs: 1000
+    waitForReadyMs: 4000
   include:
     - "**/*"
   skip: []

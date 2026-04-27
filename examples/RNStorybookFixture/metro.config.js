@@ -9,5 +9,7 @@ const config = getDefaultConfig(__dirname);
 
 module.exports = withStorybook(config, {
   configPath: './.rnstorybook',
-  websockets: 'auto',  // enables WS + HTTP server on port 7007
+  // Bind explicitly so the device connects to the same host the channel server listens on.
+  // iOS Simulator shares the host's loopback interface — localhost works for both directions.
+  websockets: { host: '127.0.0.1', port: 7007 },
 });

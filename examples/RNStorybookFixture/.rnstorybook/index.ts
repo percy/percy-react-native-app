@@ -13,6 +13,9 @@ const inMemoryStorage = {
 
 const StorybookUIRoot = view.getStorybookUI({
   storage: inMemoryStorage,
+  // Opt in to the WebSocket connection so external tools (Percy SDK, the
+  // metro server) can drive setCurrentStory remotely. Defaults to false.
+  enableWebsockets: true,
 });
 
 export default StorybookUIRoot;
