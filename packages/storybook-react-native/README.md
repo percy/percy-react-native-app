@@ -1,10 +1,21 @@
-# @percy/storybook-react-native
+# `@percy/storybook-react-native`
 
 Visual regression testing for React Native components rendered via [Storybook for React Native](https://github.com/storybookjs/react-native), captured on real iOS Simulators or Android emulators driven by Appium.
 
-> 🚧 **Status:** v0.1.0-alpha.0 — week-1 skeleton. Not yet runnable end-to-end. See the [v2 plan](../../docs/plans/2026-04-27-002-feat-storybook-react-native-component-testing-v2-plan.md) for milestones.
+## Quickstart
 
-## How it works
+```bash
+npm install --save-dev @percy/cli @percy/storybook-react-native
+npx @percy/cli storybook-rn:init           # scaffold .percy.yml + metro.config.js
+# add `enableWebsockets: true` to .rnstorybook/index → see SETUP.md §4
+npx percy storybook-rn:doctor              # verify your stack (4/4 ✓)
+export PERCY_TOKEN=app_xxxxxxxx
+percy exec -- npx percy storybook-rn       # snapshot + upload
+```
+
+➡ **Full walkthrough: [SETUP.md](./SETUP.md)** — covers iOS Simulator + native dev build, Android emulator, troubleshooting, error catalog, and configuration reference.
+
+## What it does
 
 ```
 [your RN app + Storybook RN]   running on iOS Simulator / Android emulator
@@ -13,8 +24,8 @@ Visual regression testing for React Native components rendered via [Storybook fo
                 ↓
 [@percy/storybook-react-native] ← this SDK
         ↓                    ↓
-[Storybook WS :7007]    [Appium W3C session]
-   setCurrentStory       takeScreenshot
+[Storybook channel :7007]   [Appium W3C session]
+   /select-story-sync        takeScreenshot()
                 ↓
    POST localhost:5338/percy/comparison
                 ↓
@@ -23,38 +34,48 @@ Visual regression testing for React Native components rendered via [Storybook fo
         [Percy build + diff + dashboard]
 ```
 
-No Percy-side build pipeline, no shell distribution, no code signing — your own app on your own simulator drives the test.
+- **No Percy-side build pipeline.** Your app, on your simulator, drives the test.
+- **No code signing complexity.** Use a development provisioning profile.
+- **Reuses existing Percy CLI infrastructure.** No new backend.
 
-## Quickstart (once the SDK is past the skeleton stage)
+## Commands
 
-```bash
-npm install --save-dev @percy/storybook-react-native @percy/cli
-npx @percy/storybook-react-native init    # scaffolds .percy.yml + sample story
-npx percy storybook-rn doctor             # verifies your local stack
-percy exec -- percy storybook-rn          # runs the visual test
-```
+| Command | Purpose |
+|---|---|
+| `npx percy storybook-rn` | Auto-discover stories, capture each on the connected device, upload. |
+| `npx percy storybook-rn --dry-run` | List discovered stories without uploading. |
+| `npx percy storybook-rn --stories "id1,id2"` | Explicit story IDs (overrides auto-discovery). |
+| `npx percy storybook-rn --include="Button/*"` | Glob filter on story IDs. |
+| `npx percy storybook-rn:doctor` | Local-only preflight checks (no upload). |
+| `npx @percy/cli storybook-rn:init` | Scaffold `.percy.yml` + `metro.config.js` + print next steps. |
+
+## Configuration
+
+`.percy.yml` schema lives at `storybook-rn:` — see [SETUP.md §8](./SETUP.md#8-configuration-reference) for the full reference.
 
 ## Module layout
 
 | File | Responsibility |
 |---|---|
-| `src/runner.js` | Main orchestration loop: for each story → setCurrentStory → wait → screenshot → upload |
-| `src/appium-client.js` | Wraps `webdriverio`; owns the Appium session; exposes `takeScreenshot()` |
-| `src/storybook-ws.js` | Connects to Storybook RN's port-7007 WebSocket; sends `setCurrentStory`; listens for `percy:ready` |
-| `src/comparison-poster.js` | Wraps `@percy/sdk-utils` `postComparison` (POSTs to `localhost:5338`) |
-| `src/config.js` | `.percy.yml` schema + defaults under the `storybook-rn:` key |
-| `src/errors.js` | Error catalog (acceptance contract from the v2 plan) |
+| `src/runner.js` | Story loop: select → render → screenshot → upload |
+| `src/story-enumerator.js` | Read `.rnstorybook/main.*` + parse `.stories.*` files |
+| `src/appium-client.js` | `webdriverio` wrapper; owns Appium session |
+| `src/storybook-channel.js` | HTTP client for Storybook RN's port-7007 channel server |
+| `src/comparison-poster.js` | Posts to `:5338/percy/comparison` (App Percy upload path) |
+| `src/config.js` | `.percy.yml` schema + defaults |
+| `src/errors.js` | Structured error catalog |
 | `src/commands/storybook-rn.js` | Primary CLI command |
-| `src/commands/init.js` | `init` command — scaffolds `.percy.yml` + addon snippet + sample story |
-| `src/commands/doctor.js` | `doctor` command — local-only preflight checks |
+| `src/commands/doctor.js` | Preflight checks |
+| `src/commands/init.js` | Scaffolding |
 
-## Development
+## Reference example
 
-```bash
-npm install              # from the monorepo root
-npm test                 # runs vitest
-```
+A complete working RN + Storybook + Percy setup lives at [`examples/RNStorybookFixture/`](../../examples/RNStorybookFixture) in this repo.
 
-## Local end-to-end testing
+## Troubleshooting
 
-See the **"Local Development & Testing"** section in the [v2 plan](../../docs/plans/2026-04-27-002-feat-storybook-react-native-component-testing-v2-plan.md) — the canonical setup walkthrough using iOS Simulator on Mac.
+See [SETUP.md §7 Known gotchas](./SETUP.md#7-known-gotchas-the-init-command-fixes-these-for-you) and [§9 Error catalog](./SETUP.md#9-troubleshooting-error-catalog).
+
+## License
+
+MIT
