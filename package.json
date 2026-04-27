@@ -1,0 +1,16 @@
+{
+  "name": "percy-storybook-react-native-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Percy SDK for visual testing of React Native Storybook components on real devices via Appium.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

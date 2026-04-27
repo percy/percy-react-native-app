@@ -1,0 +1,18 @@
+version: 2
+storybook-rn:
+  appium:
+    server: http://localhost:4723
+    capabilities:
+      platformName: iOS
+      "appium:platformVersion": "18.4"
+      "appium:deviceName": "iPhone 16"
+      "appium:bundleId": "com.apple.Preferences"
+      "appium:automationName": XCUITest
+      "appium:newCommandTimeout": 30
+  storybook:
+    websocketHost: localhost
+    websocketPort: 7007
+    waitForReadyMs: 1000
+  include:
+    - "**/*"
+  skip: []

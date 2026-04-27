@@ -1,0 +1,48 @@
+{
+  "name": "@percy/storybook-react-native",
+  "version": "0.1.0-alpha.0",
+  "description": "Percy SDK for visual testing of React Native Storybook components via Appium.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src test || true"
+  },
+  "@percy/cli": {
+    "commands": [
+      "./src/commands/storybook-rn.js"
+    ]
+  },
+  "dependencies": {
+    "@percy/cli-command": "^1.30.0",
+    "@percy/config": "^1.30.0",
+    "@percy/logger": "^1.30.0",
+    "@percy/sdk-utils": "^1.30.0",
+    "webdriverio": "^9.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@percy/cli": "^1.31.12",
+    "appium": "^2.19.0",
+    "appium-xcuitest-driver": "^8.4.3",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "percy",
+    "storybook",
+    "react-native",
+    "visual-testing",
+    "appium"
+  ],
+  "license": "MIT"
+}
