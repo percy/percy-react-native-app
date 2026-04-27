@@ -1,0 +1,34 @@
+{
+  "name": "rnstorybookfixture",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "storybook-generate": "sb-rn-get-stories"
+  },
+  "dependencies": {
+    "expo": "~54.0.33",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "@babel/core": "^7.29.0",
+    "babel-loader": "^8.4.1",
+    "react-native-safe-area-context": "^5.7.0",
+    "@react-native-async-storage/async-storage": "^3.0.2",
+    "@react-native-community/datetimepicker": "^9.1.0",
+    "@react-native-community/slider": "^5.2.0",
+    "react-native-reanimated": "^4.3.0",
+    "react-native-gesture-handler": "^2.31.1",
+    "@gorhom/bottom-sheet": "^5.2.10",
+    "react-native-svg": "^15.15.4",
+    "@storybook/addon-ondevice-controls": "^10.3.2",
+    "@storybook/addon-ondevice-actions": "^10.3.2",
+    "@storybook/react-native": "^10.3.2",
+    "storybook": "^10.3.5",
+    "react-dom": "19.1.0"
+  },
+  "private": true
+}

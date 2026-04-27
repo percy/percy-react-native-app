@@ -1,7 +1,7 @@
 import command, { PercyConfig } from '@percy/cli-command';
 import { mergeConfig, PERCY_CONFIG_SCHEMA } from '../config.js';
 import { AppiumClient } from '../appium-client.js';
-import { StorybookWSClient } from '../storybook-ws.js';
+import { StorybookChannelClient } from '../storybook-channel.js';
 import { isPercyEnabled } from '../comparison-poster.js';
 
 /**
@@ -43,14 +43,12 @@ export default command('doctor', {
       await c.disconnect();
       return 'reachable';
     }],
-    [`Storybook WS @ ${config.storybook.websocketHost}:${config.storybook.websocketPort}`, async () => {
-      const ws = new StorybookWSClient({
+    [`Storybook channel @ ${config.storybook.websocketHost}:${config.storybook.websocketPort}`, async () => {
+      const ch = new StorybookChannelClient({
         host: config.storybook.websocketHost,
         port: config.storybook.websocketPort,
-        connectTimeoutMs: 3000,
       });
-      await ws.connect();
-      ws.close();
+      await ch.probe();
       return 'reachable';
     }],
   ];

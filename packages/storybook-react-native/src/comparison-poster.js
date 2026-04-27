@@ -24,6 +24,26 @@ export async function isPercyEnabled() {
 }
 
 /**
+ * Reads width and height from a PNG buffer's IHDR chunk.
+ * PNG layout: 8-byte signature, then chunk 0 = IHDR, where
+ *   bytes 16-19 = width (big-endian uint32)
+ *   bytes 20-23 = height (big-endian uint32)
+ *
+ * @param {Buffer} png
+ * @returns {{ width: number, height: number }}
+ */
+function readPngDimensions(png) {
+  if (png.length < 24) {
+    throw err('screenshot_failed', 'Screenshot buffer too small to be a PNG.');
+  }
+  const sig = png.slice(0, 8).toString('hex');
+  if (sig !== '89504e470d0a1a0a') {
+    throw err('screenshot_failed', 'Screenshot is not a PNG (unexpected signature).');
+  }
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+}
+
+/**
  * @param {ComparisonInput} input
  * @returns {Promise<void>}
  */
@@ -37,13 +57,29 @@ export async function postSnapshotComparison(input) {
   }
 
   const buffer = Buffer.from(input.screenshotBase64, 'base64');
+  const { width, height } = readPngDimensions(buffer);
 
-  // postComparison accepts a `tiles` array — same shape @percy/appium-app uses.
-  // Each tile carries the screenshot bytes; Percy CLI persists + uploads.
+  // postComparison schema mirrors @percy/appium-app's GenericProvider tile.
+  // App Percy requires explicit width/height per tile; status/nav bar offsets
+  // can be added later for cropping. fullscreen=false → single-tile snapshot
+  // (no full-page stitching needed for component-level visual testing).
+  // Per @percy/core comparisonSchema: width/height belong on `tag`, not on tiles.
+  // tiles only carry content + crop offsets (statusBar/navBar/header/footer).
   await utils.postComparison({
     name: input.name,
-    tag: { name: input.tag },
-    tiles: [{ content: buffer.toString('base64') }],
-    // No status-bar / nav-bar masking yet — week-2 enhancement.
+    tag: {
+      name: input.tag,
+      osName: 'iOS',
+      width,
+      height,
+    },
+    tiles: [{
+      content: buffer.toString('base64'),
+      statusBarHeight: 0,
+      navBarHeight: 0,
+      headerHeight: 0,
+      footerHeight: 0,
+      fullscreen: false,
+    }],
   });
 }
