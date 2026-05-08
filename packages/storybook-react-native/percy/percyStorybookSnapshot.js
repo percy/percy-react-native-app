@@ -38,9 +38,10 @@ export default async function percyStorybookSnapshot(driver, story, options = {}
     percyScreenshot = mod.default ?? mod;
   } catch (cause) {
     throw err(
-      'percy_cli_unreachable',
+      'percy_appium_app_missing',
       '@percy/appium-app is not installed. It is a peer dependency of @percy/storybook-react-native (library mode).',
       'Run: npm install --save-dev @percy/appium-app',
+      cause,
     );
   }
 

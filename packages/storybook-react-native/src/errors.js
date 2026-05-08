@@ -26,6 +26,7 @@
  *   | 'deep_link_unsupported_platform'
  *   | 'url_scheme_silent_failure'
  *   | 'unsupported_platform'
+ *   | 'percy_appium_app_missing'
  * } ErrorCode
  */
 
