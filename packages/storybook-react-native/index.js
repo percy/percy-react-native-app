@@ -12,6 +12,7 @@
 import percyStorybookSnapshot from './percy/percyStorybookSnapshot.js';
 import { discoverStories } from './percy/discoverStories.js';
 import { provisionApp, useAppReference } from './percy/provisionApp.js';
+import { buildAndProvision } from './percy/buildAndProvision.js';
 import { runSession } from './percy/util/runSession.js';
 
 export default percyStorybookSnapshot;
@@ -20,5 +21,6 @@ export {
   discoverStories,
   provisionApp,
   useAppReference,
+  buildAndProvision,
   runSession,
 };

@@ -27,6 +27,11 @@
  *   | 'url_scheme_silent_failure'
  *   | 'unsupported_platform'
  *   | 'percy_appium_app_missing'
+ *   | 'build_failed'
+ *   | 'build_toolchain_missing'
+ *   | 'build_artifact_not_found'
+ *   | 'apple_signing_required'
+ *   | 'unsupported_project_type'
  * } ErrorCode
  */
 
