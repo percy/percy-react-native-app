@@ -152,11 +152,10 @@ async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
       return json.app_url;
     } catch (cause) {
       lastErr = cause;
-      // Don't retry on our typed PercyStorybookRNError 4xx — they're already terminal.
-      if (cause && /** @type {{ code?: string }} */ (cause).code &&
-          ['bs_upload_too_large', 'bs_upload_failed'].includes(/** @type {{ code: string }} */ (cause).code) &&
-          // Generic 'bs_upload_failed' from 4xx is terminal; from network/5xx, retry.
-          attempt > 1) {
+      // Typed PercyStorybookRNError → terminal (4xx — auth/payload/etc.).
+      // Generic Error → transient (5xx, network, abort) and worth retrying.
+      const code = cause && /** @type {{ code?: string }} */ (cause).code;
+      if (code && ['bs_upload_too_large', 'bs_upload_failed'].includes(code)) {
         throw cause;
       }
       if (attempt < retryOpts.retries) {
