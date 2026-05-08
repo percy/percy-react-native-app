@@ -1,0 +1,48 @@
+name: Percy Storybook RN — App Automate (Android)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  percy-storybook-rn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install webdriverio example deps
+        working-directory: webdriverio
+        run: npm install
+
+      - name: Upload Storybook host APK to BrowserStack
+        run: node scripts/upload-apk.js | tee upload.log
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          PERCY_APP_PATH: ./resources/PercyStorybookExample.apk
+
+      - name: Extract bs:// URL
+        id: app
+        run: |
+          url=$(grep -oE 'bs://[A-Za-z0-9._-]+' upload.log | tail -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Run Percy + WebdriverIO
+        working-directory: webdriverio
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          PERCY_TOKEN: ${{ secrets.PERCY_TOKEN }}
+          PERCY_APP_URL: ${{ steps.app.outputs.url }}
+        run: npx percy app:exec -- npm run android

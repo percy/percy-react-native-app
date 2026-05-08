@@ -250,3 +250,21 @@ A complete working setup lives at [`examples/RNStorybookFixture/`](https://githu
 ---
 
 Issues? File at https://github.com/percy/percy-react-native-support/issues.
+
+
+---
+
+## Library mode (BrowserStack App Automate)
+
+Everything above describes **CLI mode** — the `npx percy storybook-rn` command driving a local emulator/simulator. As of v0.2.0-alpha.0, `@percy/storybook-react-native` also ships a **library mode** that runs against BrowserStack App Automate from inside your existing WebdriverIO Appium tests.
+
+**When to pick which:**
+
+| | CLI mode (Path A) | Library mode (Path B / App Automate) |
+|---|---|---|
+| Setup | Local Appium + emulator/simulator on dev machine | BrowserStack account + App Automate session |
+| Best for | Laptop dev workflow; iOS-on-Mac CI | Linux CI / cloud CI / real device coverage |
+| Customer code | `.percy.yml` config; CLI invoked | Library imports inside an existing WebdriverIO mocha/jasmine spec |
+| Storybook host app | Local debug build | Storybook-enabled `.apk` uploaded to BS |
+
+For library-mode setup, see **[`APP_AUTOMATE.md`](./APP_AUTOMATE.md)** and the reference repo at [`examples/example-percy-storybook-react-native/`](../../examples/example-percy-storybook-react-native).

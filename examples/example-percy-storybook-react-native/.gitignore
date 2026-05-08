@@ -1,0 +1,4 @@
+node_modules/
+.percy/
+*.log
+.DS_Store
