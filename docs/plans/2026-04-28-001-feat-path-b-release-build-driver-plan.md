@@ -1,10 +1,14 @@
 ---
 title: "Path B — Release-Build Driver for @percy/storybook-react-native"
 type: feat
-status: active
+status: superseded
+superseded_by: docs/plans/2026-05-08-001-feat-app-automate-storybook-rn-transport-plan.md
+superseded_on: 2026-05-08
 date: 2026-04-28
 origin: docs/brainstorms/2026-04-28-path-b-release-build-driver-requirements.md
 ---
+
+> **Superseded 2026-05-08.** This plan is preserved for historical reference. Active plan is [`2026-05-08-001-feat-app-automate-storybook-rn-transport-plan.md`](./2026-05-08-001-feat-app-automate-storybook-rn-transport-plan.md), which adopts the `percy-appium-js` provider-resolver architecture and reverts navigation primary from deep-link to UI-tap per user direction.
 
 # Path B — Release-Build Driver for `@percy/storybook-react-native`
 
