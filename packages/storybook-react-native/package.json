@@ -1,19 +1,22 @@
 {
   "name": "@percy/storybook-react-native",
-  "version": "0.1.0-alpha.0",
-  "description": "Percy SDK for visual testing of React Native Storybook components via Appium.",
+  "version": "0.2.0-alpha.0",
+  "description": "Percy SDK for visual testing of React Native Storybook components via Appium. Supports local emulator/simulator (CLI mode) and BrowserStack App Automate (library mode).",
   "type": "module",
-  "main": "./src/index.js",
+  "main": "./index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./index.js",
+    "./cli": "./src/index.js"
   },
   "files": [
+    "index.js",
+    "percy",
     "src"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src test || true"
+    "lint": "eslint . || true"
   },
   "@percy/cli": {
     "commands": [
@@ -28,7 +31,16 @@
     "webdriverio": "^9.0.0",
     "ws": "^8.18.0"
   },
+  "peerDependencies": {
+    "@percy/appium-app": "~2.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@percy/appium-app": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@percy/appium-app": "~2.1.0",
     "@percy/cli": "^1.31.12",
     "appium": "^2.19.0",
     "appium-xcuitest-driver": "^8.4.3",
@@ -42,7 +54,9 @@
     "storybook",
     "react-native",
     "visual-testing",
-    "appium"
+    "appium",
+    "app-automate",
+    "browserstack"
   ],
   "license": "MIT"
 }
