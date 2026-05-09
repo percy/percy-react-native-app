@@ -104,10 +104,25 @@ async function pollForElement(appiumDriver, selector, timeoutMs) {
  */
 async function awaitColdBoot(appiumDriver, opts) {
   const started = Date.now();
-  // Try testID first (verified stable in v10), fall back to text match.
+  // Selector cascade — RN's testID maps to `resource-id` on Android (NOT
+  // `content-desc`). Empirically validated against @storybook/react-native
+  // v10.3.2: `mobile-menu-button` shows up as resource-id, not as content-desc.
+  // The `~accessibility-id` selector (which queries content-desc) only works
+  // if RN auto-mirrors testID → content-desc, which it doesn't when the
+  // element has children or a different a11y label. Use resourceIdMatches
+  // as the primary, accessibility-id as fallback, text as last resort.
   while (Date.now() - started < opts.coldBootMaxMs) {
-    const byId = await pollForElement(appiumDriver, '~mobile-menu-button', 500);
-    if (byId) return byId;
+    // Primary: resource-id match (RN testID → Android resource-id).
+    const byResId = await pollForElement(
+      appiumDriver,
+      'android=new UiSelector().resourceIdMatches(".*mobile-menu-button")',
+      500,
+    );
+    if (byResId) return byResId;
+    // Fallback 1: accessibility-id (works only if RN mirrors testID to content-desc).
+    const byAccId = await pollForElement(appiumDriver, '~mobile-menu-button', 500);
+    if (byAccId) return byAccId;
+    // Fallback 2: visible text (v10 ui-lite drawer toggle a11y label).
     const byText = await pollForElement(
       appiumDriver,
       'android=new UiSelector().text("Open story list")',
@@ -127,7 +142,14 @@ async function awaitColdBoot(appiumDriver, opts) {
  */
 async function openDrawer(appiumDriver, state) {
   if (state.drawerOpen) return;
-  const toggle = await pollForElement(appiumDriver, '~mobile-menu-button', 2000);
+  // Same cascade as cold-boot — resource-id first (RN testID → Android
+  // resource-id), then accessibility-id, then visible-text fallback.
+  let toggle = await pollForElement(
+    appiumDriver,
+    'android=new UiSelector().resourceIdMatches(".*mobile-menu-button")',
+    2000,
+  );
+  if (!toggle) toggle = await pollForElement(appiumDriver, '~mobile-menu-button', 1000);
   if (!toggle) {
     throw err(
       'nav_element_not_found',
@@ -137,7 +159,6 @@ async function openDrawer(appiumDriver, state) {
   }
   await toggle.click();
   state.drawerOpen = true;
-  // Small settle — drawer animation + first frame.
   await appiumDriver.pause(300);
 }
 

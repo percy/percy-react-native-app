@@ -28,13 +28,15 @@ import StorybookUIRoot from './.rnstorybook';
 export default StorybookUIRoot;
 ```
 
-Build a debug `.apk`:
+Build a `.apk`:
 ```bash
 npx expo prebuild --platform android
-cd android && ./gradlew assembleDebug && cd ..
-cp android/app/build/outputs/apk/debug/app-debug.apk \
+cd android && ./gradlew assembleRelease && cd ..
+cp android/app/build/outputs/apk/release/app-release.apk \
    ./PercyStorybookExample.apk
 ```
+
+> ⚠️ **Use `assembleRelease`, not `assembleDebug`.** A standard Expo `assembleDebug` build does **not** embed the JS bundle into the APK — it expects Metro to be running on `localhost:8081` to serve JS at runtime. On a BrowserStack cloud device, Metro isn't reachable, so the app launches into a React Native redbox with `loadJSBundleFromAssets` errors. `assembleRelease` always bundles JS via `export:embed` and uses the auto-generated `debug.keystore` (no Apple Developer account required for Android). If you must use a debug build, set `react { bundleInDebug = true }` in `android/app/build.gradle`.
 
 ## Bare React Native (Metro env-flag pattern)
 
@@ -105,6 +107,26 @@ The default UI-tap path doesn't need a URL scheme. **Skip this section unless yo
   </dict>
 </array>
 ```
+
+## Common gotchas
+
+### `@react-native-async-storage/async-storage` 3.x missing Maven artifact
+
+Storybook RN depends transitively on `@react-native-async-storage/async-storage`. Versions 3.x ship the native Android dependency (`org.asyncstorage.shared_storage:storage-android:1.0.0`) as a **local Maven repository** under `node_modules`, but RN autolinking does not always wire that local repo into the Gradle `allprojects.repositories` block.
+
+Symptom (gradle build):
+```
+Could not find org.asyncstorage.shared_storage:storage-android:1.0.0.
+Required by:
+    project :app > project :react-native-async-storage_async-storage
+```
+
+Fix — add to `android/build.gradle` `allprojects.repositories`:
+```gradle
+maven { url "${rootDir}/../node_modules/@react-native-async-storage/async-storage/android/local_repo" }
+```
+
+This will be unnecessary once async-storage 3.x publishes the native artifact to Maven Central. Track [`react-native-async-storage/async-storage` releases](https://github.com/react-native-async-storage/async-storage/releases) for the fix.
 
 ## App size considerations
 
