@@ -267,4 +267,4 @@ Everything above describes **CLI mode** — the `npx percy storybook-rn` command
 | Customer code | `.percy.yml` config; CLI invoked | Library imports inside an existing WebdriverIO mocha/jasmine spec |
 | Storybook host app | Local debug build | Storybook-enabled `.apk` uploaded to BS |
 
-For library-mode setup, see **[`APP_AUTOMATE.md`](./APP_AUTOMATE.md)** and the reference repo at [`examples/example-percy-storybook-react-native/`](../../examples/example-percy-storybook-react-native).
+For library-mode setup, see **[`APP_AUTOMATE.md`](./APP_AUTOMATE.md)** and the reference repo at [`percy/example-percy-storybook-react-native`](https://github.com/percy/example-percy-storybook-react-native) (separate repo, mirrors the [`example-percy-appium-js`](https://github.com/percy/example-percy-appium-js) layout).
