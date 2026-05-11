@@ -244,6 +244,20 @@ function segWildcardMatch(pattern, input) {
  */
 async function parseStoryFile(file) {
   const src = await fs.readFile(file, 'utf8');
+
+  // Phase 2.1 — prefer the AST parser. It handles spread operators, computed
+  // titles, indirect meta references via const bindings, and `satisfies Meta<…>`
+  // patterns the regex parser silently misses. Falls back to the legacy regex
+  // parser if AST parsing returns nothing (e.g., a file with custom CSF shape
+  // the AST walker doesn't recognize yet).
+  try {
+    const { parseStoriesAst } = await import('../percy/util/storyParser.js');
+    const astStories = parseStoriesAst(src, file);
+    if (astStories.length > 0) return astStories;
+  } catch {
+    // AST parser failed (missing peer dep, etc.). Fall through to regex.
+  }
+
   const stripped = src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '');
