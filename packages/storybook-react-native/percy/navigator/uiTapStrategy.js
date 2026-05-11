@@ -5,12 +5,23 @@ import { err } from '../../src/errors.js';
 /**
  * UI-tap navigation strategy for Storybook RN's in-app navigator.
  *
- * Verified for `@storybook/react-native` v10.x via source inspection:
- *  - `mobile-menu-button` testID: drawer toggle (both `react-native-ui-lite`
- *    and `react-native-ui` packages where exposed)
+ * STATUS — Experimental. Empirically validated against `@storybook/react-native`
+ * v9.x. On v10.3.2 (which uses the full `@storybook/react-native-ui` package
+ * rather than `react-native-ui-lite`), the navigator drawer's story tree is
+ * rendered through a virtualized list that does not expose tappable entries
+ * to Appium's accessibility tree — meaning UI-tap navigation cannot reach
+ * stories beyond the first one without a deep-link assist.
+ *
+ * For v10.x customers, use the deep-link strategy instead
+ * (`navigationStrategy: 'deeplink'`). UI-tap remains in the SDK for v9
+ * customers and as a fallback when deep-link's URL-scheme requirement is
+ * onerous.
+ *
+ * Verified for v10.3.2 via source inspection + BS device PoC:
+ *  - `mobile-menu-button` testID: drawer toggle (present in v10 full UI)
  *  - `storybook-explorer-tree` testID: tree container (lite only)
  *  - Tree leaves and component groups have NO testID and NO accessibilityLabel
- *    — text-match is the only handle for them
+ *    AND on v10 full UI are NOT in the page source at all (virtualized)
  *
  * State machine, scoped per-driver via WeakMap (no cross-driver leakage):
  *   { drawerOpen: bool, expandedComponents: Set<string>, currentStoryId: string|null }
@@ -102,33 +113,40 @@ async function pollForElement(appiumDriver, selector, timeoutMs) {
  * the cold-boot ceiling. Distinct from `nav_element_not_found` so the
  * circuit breaker classifies correctly.
  */
+/**
+ * Per-platform selector cascade for the Storybook RN drawer toggle.
+ * Android: testID → resource-id (NOT content-desc). iOS XCUITest reliably
+ * mirrors testID → accessibilityIdentifier (queried via `~`).
+ */
+function drawerToggleSelectors(platform) {
+  if (platform === 'ios') {
+    return [
+      '~mobile-menu-button',
+      '-ios predicate string:name == "mobile-menu-button" OR label == "Open story list"',
+    ];
+  }
+  // Android (default)
+  return [
+    'android=new UiSelector().resourceIdMatches(".*mobile-menu-button")',
+    '~mobile-menu-button',
+    'android=new UiSelector().text("Open story list")',
+  ];
+}
+
+function detectPlatform(appiumDriver) {
+  const caps = appiumDriver.driver?.capabilities ?? {};
+  return String(caps['appium:platformName'] ?? caps.platformName ?? '').toLowerCase();
+}
+
 async function awaitColdBoot(appiumDriver, opts) {
+  const platform = detectPlatform(appiumDriver);
+  const selectors = drawerToggleSelectors(platform);
   const started = Date.now();
-  // Selector cascade — RN's testID maps to `resource-id` on Android (NOT
-  // `content-desc`). Empirically validated against @storybook/react-native
-  // v10.3.2: `mobile-menu-button` shows up as resource-id, not as content-desc.
-  // The `~accessibility-id` selector (which queries content-desc) only works
-  // if RN auto-mirrors testID → content-desc, which it doesn't when the
-  // element has children or a different a11y label. Use resourceIdMatches
-  // as the primary, accessibility-id as fallback, text as last resort.
   while (Date.now() - started < opts.coldBootMaxMs) {
-    // Primary: resource-id match (RN testID → Android resource-id).
-    const byResId = await pollForElement(
-      appiumDriver,
-      'android=new UiSelector().resourceIdMatches(".*mobile-menu-button")',
-      500,
-    );
-    if (byResId) return byResId;
-    // Fallback 1: accessibility-id (works only if RN mirrors testID to content-desc).
-    const byAccId = await pollForElement(appiumDriver, '~mobile-menu-button', 500);
-    if (byAccId) return byAccId;
-    // Fallback 2: visible text (v10 ui-lite drawer toggle a11y label).
-    const byText = await pollForElement(
-      appiumDriver,
-      'android=new UiSelector().text("Open story list")',
-      500,
-    );
-    if (byText) return byText;
+    for (const sel of selectors) {
+      const el = await pollForElement(appiumDriver, sel, 500);
+      if (el) return el;
+    }
   }
   throw err(
     'app_cold_boot_timeout',
@@ -142,14 +160,13 @@ async function awaitColdBoot(appiumDriver, opts) {
  */
 async function openDrawer(appiumDriver, state) {
   if (state.drawerOpen) return;
-  // Same cascade as cold-boot — resource-id first (RN testID → Android
-  // resource-id), then accessibility-id, then visible-text fallback.
-  let toggle = await pollForElement(
-    appiumDriver,
-    'android=new UiSelector().resourceIdMatches(".*mobile-menu-button")',
-    2000,
-  );
-  if (!toggle) toggle = await pollForElement(appiumDriver, '~mobile-menu-button', 1000);
+  const platform = detectPlatform(appiumDriver);
+  const selectors = drawerToggleSelectors(platform);
+  let toggle;
+  for (const sel of selectors) {
+    toggle = await pollForElement(appiumDriver, sel, 1000);
+    if (toggle) break;
+  }
   if (!toggle) {
     throw err(
       'nav_element_not_found',
@@ -168,9 +185,12 @@ async function openDrawer(appiumDriver, state) {
  * exposed by Storybook RN).
  */
 async function tapByText(appiumDriver, text) {
-  // Sanitize — UiSelector text() literal cannot contain unescaped quotes.
   const safe = String(text).replace(/"/g, '\\"');
-  const selector = `android=new UiSelector().text("${safe}")`;
+  const platform = detectPlatform(appiumDriver);
+  const selector =
+    platform === 'ios'
+      ? `-ios predicate string:label == "${safe}" OR name == "${safe}"`
+      : `android=new UiSelector().text("${safe}")`;
   const el = await pollForElement(appiumDriver, selector, 2000);
   if (!el) {
     throw err(

@@ -8,6 +8,48 @@ Your production app's entry point renders your app. The Storybook host app's ent
 
 **Don't gate Storybook behind a runtime flag in your production build.** Apple's App Store §2.3.1 (Hidden Features) makes runtime-gated single binaries that reach production a real rejection risk. Use a separate Xcode scheme / EAS Build profile / Metro env-flag-driven bundle.
 
+## When Storybook is not the rendered root
+
+The recommended pattern above is "App.js returns StorybookUIRoot directly" — Storybook is the entire app for the host build. The SDK's deep-link navigation assumes this: when the device receives `myapp:///?STORYBOOK_STORY_ID=...`, Storybook RN's built-in URL handler picks up the parameter and renders the matching story.
+
+If your host build wraps Storybook in other UI (a login screen, a tab bar, an onboarding flow), the deep-link reaches your root component but Storybook's URL handler never sees the `STORYBOOK_STORY_ID` parameter. The snapshot will be of whatever your wrapper renders, not the requested story.
+
+**Fix — wire `Linking.getInitialURL()` to bypass your wrapper when a story param is present.** Copy-paste pattern:
+
+```jsx
+// MyApp-Storybook scheme entry. Customers whose host build can't make
+// Storybook the literal root (auth gates, tabs, etc.) use this pattern.
+import { useEffect, useState } from 'react';
+import { Linking } from 'react-native';
+import StorybookUIRoot from './.rnstorybook';
+import App from './src/App';
+
+export default function Root() {
+  const [showStorybook, setShowStorybook] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Linking.getInitialURL().then((url) => {
+      if (cancelled) return;
+      if (url && url.includes('STORYBOOK_STORY_ID=')) setShowStorybook(true);
+    });
+    // Also listen for foreground deep links (when Appium switches stories
+    // without restarting the app).
+    const sub = Linking.addEventListener('url', (event) => {
+      if (event.url.includes('STORYBOOK_STORY_ID=')) setShowStorybook(true);
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  return showStorybook ? <StorybookUIRoot /> : <App />;
+}
+```
+
+This is opt-in and customer-side. The SDK can't ship this as a drop-in component because the wrapper architecture varies too much across customer apps. If you'd prefer to keep your existing entry point unchanged, the cleanest fallback is to ship a separate Storybook-only target / EAS Build profile that doesn't have the wrapper at all (the canonical pattern recommended at the top of this guide).
+
 ## Expo (recommended)
 
 `app.json`:
@@ -141,7 +183,7 @@ The SDK is validated against a specific set of Storybook RN + RN + build-tooling
 | **Storybook RN versions** | | |
 | `@storybook/react-native` v9.x — deep-link | ✅ | `STORYBOOK_STORY_ID` URL parameter has been stable since v9 |
 | `@storybook/react-native` v10.x — deep-link | ✅ | Validated end-to-end against v10.3.2 in initial PoC |
-| `@storybook/react-native` v10.x — UI-tap | ⚠️ | v10.3.2 bottom-sheet navigator empirically unresponsive to taps; use deep-link |
+| `@storybook/react-native` v10.x — UI-tap | ❌ | v10.3.2 navigator uses a virtualized list that doesn't expose tappable entries to Appium's accessibility tree. Empirically confirmed; use deep-link instead. |
 | `@storybook/react-native` < v9 | ❌ | URL handler not present; use UI-tap (also untested) |
 | **React Native runtime** | | |
 | Hermes | ✅ | No SDK coupling |
