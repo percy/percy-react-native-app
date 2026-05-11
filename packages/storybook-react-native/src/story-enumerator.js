@@ -244,56 +244,18 @@ function segWildcardMatch(pattern, input) {
  */
 async function parseStoryFile(file) {
   const src = await fs.readFile(file, 'utf8');
-
-  // Phase 2.1 — prefer the AST parser. It handles spread operators, computed
-  // titles, indirect meta references via const bindings, and `satisfies Meta<…>`
-  // patterns the regex parser silently misses. Falls back to the legacy regex
-  // parser if AST parsing returns nothing (e.g., a file with custom CSF shape
-  // the AST walker doesn't recognize yet).
-  try {
-    const { parseStoriesAst } = await import('../percy/util/storyParser.js');
-    const astStories = parseStoriesAst(src, file);
-    if (astStories.length > 0) return astStories;
-  } catch {
-    // AST parser failed (missing peer dep, etc.). Fall through to regex.
-  }
-
-  const stripped = src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '');
-
-  const title = extractTitle(stripped);
-  if (!title) return [];
-
-  const componentTitle = title.replace(/\//g, '/');
-  const titleId = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  /** @type {StoryDescriptor[]} */
-  const stories = [];
-  const seen = new Set();
-  for (const m of stripped.matchAll(/export\s+const\s+([A-Za-z_$][\w$]*)\s*[:=]/g)) {
-    const exportName = m[1];
-    if (seen.has(exportName)) continue;
-    seen.add(exportName);
-    if (exportName === 'default') continue;
-
-    const id = `${titleId}--${kebab(exportName)}`;
-    stories.push({
-      id,
-      name: humanize(exportName),
-      componentTitle,
-    });
-  }
-  return stories;
+  // AST parser handles the full CSF surface: spread operators, computed
+  // titles via const refs, satisfies/as Meta<…>, indirect default exports,
+  // and standard CSF v3. Returns [] for files with no recognizable story
+  // shape — that's the correct answer (no fallback to lossy regex parsing
+  // that would produce different IDs for the same source).
+  const { parseStoriesAst } = await import('../percy/util/storyParser.js');
+  return parseStoriesAst(src, file);
 }
 
 /**
- * Extracts `title: 'Foo/Bar'` from the default export's meta object.
- * Supports both `export default { title: 'X', ... }` and the
- * `const meta = { title: 'X' } satisfies Meta` pattern.
+ * Kept for backwards compat with any external caller importing it from this
+ * package — internal callers no longer use it.
  *
  * @param {string} src
  */
@@ -311,26 +273,6 @@ export function extractTitle(src) {
     }
   }
   return null;
-}
-
-/**
- * @param {string} s
- */
-function kebab(s) {
-  return s
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-    .toLowerCase();
-}
-
-/**
- * @param {string} s
- */
-function humanize(s) {
-  // Split camelCase / PascalCase → "Logged In", "With Image"
-  return s
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
 }
 
 /**

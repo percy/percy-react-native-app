@@ -17,22 +17,36 @@ export class IosMetadata extends Metadata {
   }
 
   /**
+   * Parse `platformVersion` once. Memoized per call site via the local var
+   * pattern — version is a read-only Appium capability, so callers within a
+   * single session will see identical inputs.
+   *
+   * @returns {{ major: number | null, minor: number }}
+   */
+  _parsedVersion() {
+    const raw = this.platformVersion();
+    if (!raw) return { major: null, minor: 0 };
+    const m = String(raw).match(/^(\d+)(?:\.(\d+))?/);
+    if (!m) return { major: null, minor: 0 };
+    return {
+      major: Number(m[1]),
+      minor: m[2] !== undefined ? Number(m[2]) : 0,
+    };
+  }
+
+  /**
    * iOS deep-link (driver.url()) is unreliable below 16.4. The SDK uses
    * this to short-circuit and fail-fast rather than time out.
    * @returns {number | null}
    */
   platformVersionMajor() {
-    const raw = this.platformVersion();
-    if (!raw) return null;
-    const m = String(raw).match(/^(\d+)/);
-    return m ? Number(m[1]) : null;
+    return this._parsedVersion().major;
   }
 
+  /** @returns {number | null} */
   platformVersionMinor() {
-    const raw = this.platformVersion();
-    if (!raw) return null;
-    const m = String(raw).match(/^\d+\.(\d+)/);
-    return m ? Number(m[1]) : null;
+    const { major, minor } = this._parsedVersion();
+    return major === null ? null : minor;
   }
 
   /**
@@ -41,8 +55,7 @@ export class IosMetadata extends Metadata {
    * @returns {boolean}
    */
   supportsDeepLink() {
-    const major = this.platformVersionMajor();
-    const minor = this.platformVersionMinor() ?? 0;
+    const { major, minor } = this._parsedVersion();
     if (major === null) return true; // unknown — assume yes, fail fast at runtime if wrong
     if (major > 16) return true;
     if (major === 16 && minor >= 4) return true;

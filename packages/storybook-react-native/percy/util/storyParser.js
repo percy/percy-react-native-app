@@ -1,4 +1,30 @@
 import { parse } from '@babel/parser';
+import { log } from './log.js';
+
+/**
+ * CSF "reserved" top-level export names that are NOT stories — story files
+ * legally export these alongside actual stories under the v3 CSF spec.
+ * Filtering them prevents the SDK from treating, e.g., `export const decorators`
+ * as a story leaf and trying to navigate to / snapshot it.
+ *
+ * @see https://storybook.js.org/docs/api/csf
+ */
+const CSF_RESERVED_EXPORTS = new Set([
+  'decorators',
+  'parameters',
+  'argTypes',
+  'args',
+  'tags',
+  'loaders',
+  'play',
+  'beforeEach',
+  'globals',
+  'render',
+  'component',
+]);
+
+/** Maximum recursion depth when walking spread sources during meta resolution. */
+const MAX_SPREAD_DEPTH = 8;
 
 /**
  * AST-based parser for Storybook CSF (Component Story Format) files.
@@ -32,8 +58,23 @@ export function parseStoriesAst(src, filename = 'stories.tsx') {
       sourceFilename: filename,
       errorRecovery: true,
     });
-  } catch {
+  } catch (cause) {
+    log.debug(
+      `[storybook-rn] parseStoriesAst: parse failed for ${filename}: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+    );
     return [];
+  }
+
+  // errorRecovery: true returns a partial AST + populates ast.errors[] when
+  // recovery kicked in. Partial ASTs produce under-enumerated story lists.
+  // Surface as a debug-level warning so the customer can act on it; don't
+  // throw because errorRecovery's whole point is to keep producing output.
+  if (ast.errors?.length > 0) {
+    log.debug(
+      `[storybook-rn] parseStoriesAst: ${ast.errors.length} parse error(s) in ${filename}; story list may be incomplete`,
+    );
   }
 
   // Index top-level `const NAME = expression` for indirect meta lookup.
@@ -132,8 +173,10 @@ function findDefaultExportObject(ast, constBindings) {
 
 /**
  * Find all `export const NAME = …` story-leaf exports.
- * Excludes the meta export (already handled separately) and any export
- * whose name starts with `__` (Storybook convention for internal).
+ * Excludes: the meta export, names starting with `__` (Storybook internal
+ * convention), and CSF v3 reserved top-level metadata exports
+ * (decorators, parameters, argTypes, etc.) — these are not stories even
+ * though they share the `export const NAME = …` shape.
  */
 function findNamedExports(ast) {
   const names = [];
@@ -143,7 +186,9 @@ function findNamedExports(ast) {
     for (const decl of stmt.declaration.declarations) {
       if (decl.id?.type !== 'Identifier') continue;
       const name = decl.id.name;
-      if (name.startsWith('__') || name === 'default' || name === 'meta') continue;
+      if (name.startsWith('__')) continue;
+      if (name === 'default' || name === 'meta') continue;
+      if (CSF_RESERVED_EXPORTS.has(name)) continue;
       names.push(name);
     }
   }
@@ -160,9 +205,15 @@ function findNamedExports(ast) {
  *
  * Returns null if the property isn't a resolvable string.
  */
-function resolveStringProperty(objectExpr, propertyName, constBindings) {
-  // Pass 1 — direct match
-  for (const prop of objectExpr.properties) {
+function resolveStringProperty(objectExpr, propertyName, constBindings, visited = new Set(), depth = 0) {
+  // Guard against mutually-recursive const spreads
+  // (`const a = { ...b }; const b = { ...a }`).
+  if (depth >= MAX_SPREAD_DEPTH) return null;
+  if (visited.has(objectExpr)) return null;
+  visited.add(objectExpr);
+
+  // Pass 1 — direct match on this object's own properties.
+  for (const prop of objectExpr.properties ?? []) {
     if (prop.type === 'ObjectProperty' && propertyKey(prop) === propertyName) {
       const v = prop.value;
       if (v.type === 'StringLiteral') return v.value;
@@ -172,18 +223,18 @@ function resolveStringProperty(objectExpr, propertyName, constBindings) {
       }
     }
   }
-  // Pass 2 — recurse into spreads (`...base`)
-  for (const prop of objectExpr.properties) {
+  // Pass 2 — recurse into spreads (`...base`).
+  for (const prop of objectExpr.properties ?? []) {
     if (prop.type !== 'SpreadElement') continue;
     if (prop.argument.type === 'Identifier') {
       const bound = constBindings.get(prop.argument.name);
       if (bound?.type === 'ObjectExpression') {
-        const inner = resolveStringProperty(bound, propertyName, constBindings);
+        const inner = resolveStringProperty(bound, propertyName, constBindings, visited, depth + 1);
         if (inner) return inner;
       }
     }
     if (prop.argument.type === 'ObjectExpression') {
-      const inner = resolveStringProperty(prop.argument, propertyName, constBindings);
+      const inner = resolveStringProperty(prop.argument, propertyName, constBindings, visited, depth + 1);
       if (inner) return inner;
     }
   }

@@ -1,4 +1,5 @@
 import { err } from '../../src/errors.js';
+import { MetadataResolver } from '../metadata/metadataResolver.js';
 
 /**
  * Deep-link navigation strategy — Phase 1.5/2 OPT-IN.
@@ -12,7 +13,7 @@ import { err } from '../../src/errors.js';
  * onboarding step entirely.
  *
  * Storybook RN reads the `STORYBOOK_STORY_ID` URL parameter natively
- * via its built-in URL handler — no customer-side React code needed.
+ * via its built-in URL handler — no customer-side URL handler needed.
  * Reference: `STORYBOOK_STORY_ID_PARAM` constant in
  * https://github.com/storybookjs/react-native/blob/main/packages/react-native/src/constants.ts
  */
@@ -20,7 +21,39 @@ import { err } from '../../src/errors.js';
 const DEFAULTS = {
   renderMs: 1500,
   globalNavigationBudgetMs: 8000,
+  /**
+   * Hard cap on a single `driver.url()` / `mobile: deepLink` call. Below
+   * this, the navigation hasn't taken effect — re-tries / fallback paths
+   * are the caller's job. Sized to comfortably exceed normal latency
+   * (200ms–1s) without leaving a stuck session for tens of seconds.
+   */
+  deepLinkTimeoutMs: 10_000,
 };
+
+/**
+ * Race a promise against a timeout, rejecting with a `deep_link_unsupported_platform`
+ * error if it doesn't settle in time. Used so a stuck `driver.url()` doesn't
+ * hold the whole snapshot run hostage.
+ *
+ * @template T
+ * @param {Promise<T>} p
+ * @param {number} timeoutMs
+ * @param {string} label
+ * @returns {Promise<T>}
+ */
+function withTimeout(p, timeoutMs, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(err(
+        'deep_link_unsupported_platform',
+        `${label} did not settle within ${timeoutMs}ms.`,
+        'The driver may be wedged or the URL scheme may not be registered. Drop navigationStrategy to use the default UI-tap path on this platform.',
+      ));
+    }, timeoutMs);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Build the deep-link URL. The trailing `:///` shape (three slashes
@@ -39,30 +72,9 @@ export function buildDeepLinkUrl(scheme, storyId) {
 }
 
 /**
- * Detect platform from driver capabilities — cheap, no caching.
- */
-function detectPlatform(appiumDriver) {
-  const caps = appiumDriver.driver?.capabilities ?? {};
-  return String(caps['appium:platformName'] ?? caps.platformName ?? '').toLowerCase();
-}
-
-/**
- * Read iOS version from caps to gate `driver.url()` deep-link on iOS < 16.4.
- * @returns {{ major: number, minor: number } | null}
- */
-function readIosVersion(appiumDriver) {
-  const caps = appiumDriver.driver?.capabilities ?? {};
-  const raw = caps['appium:platformVersion'] ?? caps.platformVersion;
-  if (!raw) return null;
-  const m = String(raw).match(/^(\d+)(?:\.(\d+))?/);
-  if (!m) return null;
-  return { major: Number(m[1]), minor: Number(m[2] ?? 0) };
-}
-
-/**
  * @param {object} appiumDriver  AppiumDriver wrapper
  * @param {{ id: string }} descriptor
- * @param {{ appScheme: string, appPackage: string, renderMs?: number }} opts
+ * @param {{ appScheme: string, appPackage: string, renderMs?: number, deepLinkTimeoutMs?: number }} opts
  */
 export async function deepLinkNavigate(appiumDriver, descriptor, opts) {
   const merged = { ...DEFAULTS, ...opts };
@@ -74,19 +86,24 @@ export async function deepLinkNavigate(appiumDriver, descriptor, opts) {
     );
   }
 
-  const platform = detectPlatform(appiumDriver);
+  // Single source of truth for platform + version gating. MetadataResolver
+  // wraps the raw caps in IosMetadata / AndroidMetadata so we don't end up
+  // with parallel regex extractors drifting from each other.
+  const metadata = MetadataResolver.resolve(appiumDriver.driver);
+  const isIos = metadata.platformName().toLowerCase() === 'ios';
   const url = buildDeepLinkUrl(merged.appScheme, descriptor.id);
 
   try {
-    if (platform === 'ios') {
+    if (isIos) {
       // iOS < 16.4 — fail-fast. `driver.url()` and `mobile: deepLink` are both
       // unreliable below 16.4 per parent plan §17.3 and the appium-xcuitest-driver
       // issue tracker (https://github.com/appium/appium-xcuitest-driver/issues/2049).
-      const ver = readIosVersion(appiumDriver);
-      if (ver && (ver.major < 16 || (ver.major === 16 && ver.minor < 4))) {
+      if (typeof metadata.supportsDeepLink === 'function' && !metadata.supportsDeepLink()) {
+        const major = metadata.platformVersionMajor?.() ?? '?';
+        const minor = metadata.platformVersionMinor?.() ?? '?';
         throw err(
           'deep_link_unsupported_platform',
-          `mobile: deepLink is unreliable on iOS < 16.4 (got ${ver.major}.${ver.minor}).`,
+          `mobile: deepLink is unreliable on iOS < 16.4 (got ${major}.${minor}).`,
           'Drop navigationStrategy to use the default UI-tap path on this platform, or bump appium:platformVersion to 16.4+.',
         );
       }
@@ -95,9 +112,13 @@ export async function deepLinkNavigate(appiumDriver, descriptor, opts) {
       // documented contract.
       const wdioDriver = appiumDriver.driver;
       if (typeof wdioDriver.url === 'function') {
-        await wdioDriver.url(url);
+        await withTimeout(wdioDriver.url(url), merged.deepLinkTimeoutMs, 'driver.url()');
       } else {
-        await appiumDriver.executeScript('mobile: deepLink', { url });
+        await withTimeout(
+          appiumDriver.executeScript('mobile: deepLink', { url }),
+          merged.deepLinkTimeoutMs,
+          'mobile: deepLink',
+        );
       }
     } else {
       // Android — mobile: deepLink with package id.
@@ -108,10 +129,14 @@ export async function deepLinkNavigate(appiumDriver, descriptor, opts) {
           'Set appPackage to your Android package id (e.g. com.acme.storybook).',
         );
       }
-      await appiumDriver.executeScript('mobile: deepLink', {
-        url,
-        package: merged.appPackage,
-      });
+      await withTimeout(
+        appiumDriver.executeScript('mobile: deepLink', {
+          url,
+          package: merged.appPackage,
+        }),
+        merged.deepLinkTimeoutMs,
+        'mobile: deepLink',
+      );
     }
   } catch (cause) {
     // Re-throw typed PercyStorybookRNError as-is (the iOS<16.4 + missing appPackage

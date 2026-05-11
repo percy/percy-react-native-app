@@ -125,4 +125,51 @@ describe('parseStoriesAst — AST-based CSF parsing (item 2.1)', () => {
     // Should not throw — parser is configured with errorRecovery.
     expect(() => parseStoriesAst(src)).not.toThrow();
   });
+
+  it('filters CSF v3 reserved top-level metadata exports out of the story list', () => {
+    // decorators / parameters / argTypes / args / tags / loaders / play /
+    // beforeEach / globals / render / component are valid CSF v3 exports that
+    // ARE NOT stories — the parser must not emit them as snapshot leaves.
+    const src = `
+      export default { title: 'Reserved/Exports' };
+      export const decorators = [];
+      export const parameters = { layout: 'centered' };
+      export const argTypes = {};
+      export const args = {};
+      export const tags = ['autodocs'];
+      export const loaders = [];
+      export const play = async () => {};
+      export const beforeEach = async () => {};
+      export const globals = {};
+      export const render = () => null;
+      export const component = () => null;
+      export const ActualStory = {};
+    `;
+    const result = parseStoriesAst(src);
+    expect(result.map((r) => r.name)).toEqual(['Actual Story']);
+  });
+
+  it('does not stack-overflow on mutually-recursive const spreads', () => {
+    // `...a` references `b`, `...b` references `a`. Without the visited Set
+    // + depth guard the resolver would loop forever; with it, we either find
+    // the title via one of the cycles or return [] cleanly.
+    const src = `
+      const a = { ...b, title: 'Cycle/Title' };
+      const b = { ...a };
+      export default { ...b, component: Foo };
+      export const Default = {};
+    `;
+    expect(() => parseStoriesAst(src)).not.toThrow();
+  });
+
+  it('cleanly returns [] when title cannot be resolved through deep spreads', () => {
+    // Spread chain with no title anywhere — must not throw and must yield [].
+    const src = `
+      const inner = { tags: ['a'] };
+      const outer = { ...inner };
+      export default { ...outer, component: Foo };
+      export const A = {};
+    `;
+    expect(parseStoriesAst(src)).toEqual([]);
+  });
 });

@@ -244,3 +244,67 @@ describe('provisionApp — debug-build detection (item 2.3)', () => {
     expect(ref).toBe('bs://cached-release-ref');
   }, 30_000);
 });
+
+describe('provisionApp — credential validation', () => {
+  it('rejects a userName containing ":" (would break the Basic auth header)', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'user:withcolon';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    // Make sure recent_apps probe never gets a real fetch — guard fires first.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(
+      provisionApp(apkPath, { postUploadSettleMs: 0, skipDebugBuildCheck: true }),
+    ).rejects.toMatchObject({ code: 'bs_credentials_missing' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('accepts a normal userName without colons', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'normaluser';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ app_url: 'bs://x' }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(apkPath, {
+      postUploadSettleMs: 0,
+      skipDebugBuildCheck: true,
+    });
+    expect(ref).toBe('bs://x');
+  });
+});
+
+describe('provisionApp — error body scrubbing', () => {
+  it('redacts access-key-shaped tokens from a 4xx error body', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const fetchMock = vi.fn(async (url) => {
+      if (typeof url === 'string' && url.includes('recent_apps')) {
+        return { status: 404, ok: false, text: async () => '', json: async () => null };
+      }
+      return {
+        status: 401,
+        ok: false,
+        text: async () =>
+          'denied for access_key=AbCdEfGhIjKlMnOpQrSt and other secret BlAhBlAhBlAhBlAhBlAh',
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let caught;
+    try {
+      await provisionApp(apkPath, {
+        postUploadSettleMs: 0,
+        skipDebugBuildCheck: true,
+        uploadRetries: 1,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    expect(caught.code).toBe('bs_upload_failed');
+    expect(caught.message).toContain('[redacted]');
+    expect(caught.message).not.toContain('AbCdEfGhIjKlMnOpQrSt');
+    expect(caught.message).not.toContain('BlAhBlAhBlAhBlAhBlAh');
+  });
+});
