@@ -131,3 +131,50 @@ This will be unnecessary once async-storage 3.x publishes the native artifact to
 ## App size considerations
 
 Storybook host apps tend to be larger than production builds (every story, every component, every fixture in one bundle). BrowserStack's per-account upload limit is 1 GB by default — most Storybook builds land between 30 MB and 200 MB and are well within the limit. If you exceed it, strip unused native modules or split your stories into multiple host apps.
+
+## Compatibility & known limitations
+
+The SDK is validated against a specific set of Storybook RN + RN + build-tooling combinations. The matrix below tells you upfront where your setup fits.
+
+| Scenario | Status | Notes |
+|---|---|---|
+| **Storybook RN versions** | | |
+| `@storybook/react-native` v9.x — deep-link | ✅ | `STORYBOOK_STORY_ID` URL parameter has been stable since v9 |
+| `@storybook/react-native` v10.x — deep-link | ✅ | Validated end-to-end against v10.3.2 in initial PoC |
+| `@storybook/react-native` v10.x — UI-tap | ⚠️ | v10.3.2 bottom-sheet navigator empirically unresponsive to taps; use deep-link |
+| `@storybook/react-native` < v9 | ❌ | URL handler not present; use UI-tap (also untested) |
+| **React Native runtime** | | |
+| Hermes | ✅ | No SDK coupling |
+| New Architecture (Fabric, TurboModules) | ✅ | No SDK coupling |
+| **Expo / build tooling** | | |
+| Expo SDK 51+ | ✅ | Validated against SDK 54 |
+| EAS Build outputs | ✅ | Customer provides the resulting `.apk` path |
+| Bare RN (gradle direct) | ✅ | Same `.apk` contract |
+| **Build variants** | | |
+| `assembleRelease` | ✅ | Required — embeds JS bundle |
+| `assembleDebug` | ❌ | Debug expects Metro on localhost:8081; cloud devices have no Metro → red box on launch. Either use release, or set `react { bundleInDebug = true }` in app/build.gradle |
+| Customer's release build is unsigned | ❌ | Android needs at least debug-keystore signing for BS to install. Standard Expo template handles this. |
+| **URL scheme (deep-link mode)** | | |
+| Scheme registered in `app.json` (Expo) | ✅ | One line: `{ "expo": { "scheme": "myapp" } }` |
+| Scheme registered in `AndroidManifest.xml` (bare RN) | ✅ | `<intent-filter>` block |
+| No scheme registered | ❌ deep-link silently no-ops | Either register one (recommended) or use UI-tap path |
+| **Customer app architecture** | | |
+| Storybook is the rendered root (separate target / `App.js` returns `StorybookUIRoot`) | ✅ | Recommended pattern; canonical setup |
+| Storybook wrapped behind login / tabs / navigation | ⚠️ | Customer must wire `Linking.getInitialURL()` to navigate-to-Storybook when `STORYBOOK_STORY_ID` URL param is present, otherwise deep-link reaches the root but doesn't render Storybook |
+| **Story file syntax** | | |
+| Standard CSF (`export default { title: 'Forms/Button' }`) | ✅ | Default case |
+| TypeScript `satisfies Meta<…>` pattern | ✅ | Parser handles |
+| Computed `title` (`title: TITLE_CONST`) | ⚠️ | Regex parser misses; pass story list explicitly to `discoverStories` until AST parser ships |
+| Spread operators in meta (`...defaultMeta`) | ⚠️ | Same as above |
+| Stories in monorepo (`apps/*/.rnstorybook/main.ts`) | ✅ | Pass `configDir` opt to `discoverStories` |
+| **Platforms** | | |
+| Android — App Automate (cloud) | ✅ | Phase 1 default |
+| Android — local Appium emulator (library mode) | ✅ | Transport auto-detected |
+| Android — local emulator (CLI mode) | ✅ | PER-7859 flow |
+| iOS — App Automate | 🟡 Phase 2 | Requires distribution-signed `.ipa` (customer Apple Developer account) |
+| iOS — Simulator (local Mac) | 🟡 Phase 2 | Code path exists in `buildAndProvision`; not yet validated |
+| iOS < 16.4 — deep-link | ❌ | `mobile: deepLink` unreliable below 16.4; SDK fails fast with `deep_link_unsupported_platform` |
+
+**Legend:** ✅ works · ❌ fails with clear error · ⚠️ has workaround · 🟡 planned
+
+If you're hitting a ❌ or ⚠️ above and the workaround doesn't fit your setup, please file an issue at [`percy/percy-react-native-support`](https://github.com/percy/percy-react-native-support/issues) with your Storybook RN version, RN version, and a minimal reproduction.
