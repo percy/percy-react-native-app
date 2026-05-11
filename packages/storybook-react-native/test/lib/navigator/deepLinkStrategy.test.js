@@ -88,3 +88,59 @@ describe('deepLinkNavigate', () => {
     ).rejects.toMatchObject({ code: 'nav_element_not_found' });
   });
 });
+
+import { createMockDriver } from '../createMockDriver.js';
+
+describe('deepLinkNavigate — iOS branch (item 2.2)', () => {
+  it('uses driver.url() on iOS 17+', async () => {
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'iOS', 'appium:platformVersion': '17.4' },
+    });
+    wdioDriver.url = vi.fn(async () => {});
+    const appium = { driver: wdioDriver, executeScript: vi.fn(), pause: vi.fn() };
+    await deepLinkNavigate(
+      appium,
+      { id: 'forms-button--primary' },
+      { appScheme: 'myapp' }, // iOS doesn't require appPackage
+    );
+    expect(wdioDriver.url).toHaveBeenCalledWith(
+      'myapp:///?STORYBOOK_STORY_ID=forms-button--primary',
+    );
+    expect(appium.executeScript).not.toHaveBeenCalled();
+  });
+
+  it('fails fast on iOS < 16.4 with deep_link_unsupported_platform', async () => {
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'iOS', 'appium:platformVersion': '16.3' },
+    });
+    wdioDriver.url = vi.fn();
+    const appium = { driver: wdioDriver, executeScript: vi.fn(), pause: vi.fn() };
+    await expect(
+      deepLinkNavigate(appium, { id: 'x' }, { appScheme: 'myapp' }),
+    ).rejects.toMatchObject({ code: 'deep_link_unsupported_platform' });
+    // Never hits driver.url() since we short-circuit.
+    expect(wdioDriver.url).not.toHaveBeenCalled();
+  });
+
+  it('iOS deep-link path does not require appPackage', async () => {
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'iOS', 'appium:platformVersion': '17.0' },
+    });
+    wdioDriver.url = vi.fn(async () => {});
+    const appium = { driver: wdioDriver, executeScript: vi.fn(), pause: vi.fn() };
+    // No appPackage in opts — should still work on iOS.
+    await expect(
+      deepLinkNavigate(appium, { id: 'a--b' }, { appScheme: 'myapp' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('Android branch still requires appPackage', async () => {
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'Android' },
+    });
+    const appium = { driver: wdioDriver, executeScript: vi.fn(), pause: vi.fn() };
+    await expect(
+      deepLinkNavigate(appium, { id: 'x' }, { appScheme: 'myapp' /* no appPackage */ }),
+    ).rejects.toMatchObject({ code: 'invalid_descriptor' });
+  });
+});
