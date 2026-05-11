@@ -24,10 +24,12 @@
     ]
   },
   "dependencies": {
+    "@babel/parser": "^7.29.3",
     "@percy/cli-command": "^1.30.0",
     "@percy/config": "^1.30.0",
     "@percy/logger": "^1.30.0",
     "@percy/sdk-utils": "^1.30.0",
+    "adm-zip": "^0.5.17",
     "webdriverio": "^9.0.0",
     "ws": "^8.18.0"
   },

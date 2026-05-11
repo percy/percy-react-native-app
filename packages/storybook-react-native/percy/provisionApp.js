@@ -1,9 +1,10 @@
 import { promises as fs } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, extname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { log } from './util/log.js';
 import { err } from '../src/errors.js';
 import { assertValidAppReference } from './util/validations.js';
+import { readApkDebuggable } from './util/apkManifest.js';
 
 const UPLOAD_URL = 'https://api-cloud.browserstack.com/app-automate/upload';
 const RECENT_APPS_URL = 'https://api-cloud.browserstack.com/app-automate/recent_apps';
@@ -211,6 +212,21 @@ export async function provisionApp(localPath, opts = {}) {
       );
     }
     return localPath;
+  }
+
+  // Sanity check: reject debuggable APKs before consuming BS session minutes.
+  // Debug APKs expect Metro on localhost:8081 to serve JS — on a cloud device,
+  // no Metro = redbox loadJSBundleFromAssets failure. Documented as a known
+  // onboarding gotcha in STORYBOOK_HOST_APP.md.
+  if (!opts?.skipDebugBuildCheck && extname(localPath).toLowerCase() === '.apk') {
+    const probe = await readApkDebuggable(localPath).catch(() => null);
+    if (probe?.debuggable === true) {
+      throw err(
+        'build_is_debug_variant',
+        `${basename(localPath)} is a DEBUG build (android:debuggable="true"). Debug APKs expect Metro on localhost:8081 to serve the JS bundle. On a BrowserStack cloud device there is no Metro, so the app would crash with a redbox loadJSBundleFromAssets error.`,
+        'Build the release variant: `cd android && ./gradlew assembleRelease`. To bypass this check (e.g., you set bundleInDebug=true in app/build.gradle), pass { skipDebugBuildCheck: true } to provisionApp().',
+      );
+    }
   }
 
   const { userName: u, accessKey: k } = readCredentials(opts);

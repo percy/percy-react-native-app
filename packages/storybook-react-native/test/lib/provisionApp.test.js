@@ -199,3 +199,48 @@ describe('provisionApp — App Automate transport', () => {
     expect(ref).toBe(apkPath);
   });
 });
+
+describe('provisionApp — debug-build detection (item 2.3)', () => {
+  it('rejects a real debug APK with build_is_debug_variant', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const DEBUG_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/debug/app-debug.apk';
+    // Stub fetch so we never actually hit BS — the guard must fire before that.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(provisionApp(DEBUG_APK, { postUploadSettleMs: 0 })).rejects.toMatchObject({
+      code: 'build_is_debug_variant',
+    });
+    // Guard fires before any network call.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it('accepts the same APK when skipDebugBuildCheck is true', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const DEBUG_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/debug/app-debug.apk';
+    // Stub fetch: recent_apps says cache hit so we don't actually upload.
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ app_url: 'bs://cached-debug-ref' }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(DEBUG_APK, { postUploadSettleMs: 0, skipDebugBuildCheck: true });
+    expect(ref).toBe('bs://cached-debug-ref');
+  }, 30_000);
+
+  it('accepts a release APK normally (no guard fires)', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const RELEASE_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/release/app-release.apk';
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ app_url: 'bs://cached-release-ref' }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(RELEASE_APK, { postUploadSettleMs: 0 });
+    expect(ref).toBe('bs://cached-release-ref');
+  }, 30_000);
+});
