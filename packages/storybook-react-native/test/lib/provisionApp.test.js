@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFileSync, mkdtempSync } from 'node:fs';
@@ -8,6 +8,8 @@ import {
   useAppReference,
   __forTesting,
 } from '../../percy/provisionApp.js';
+
+const skipIf = (cond) => (cond ? it.skip : it);
 
 const { fileCustomId, buildAuthHeader } = __forTesting;
 
@@ -200,11 +202,19 @@ describe('provisionApp — App Automate transport', () => {
   });
 });
 
+// Real-APK fixtures lived in the (now removed) examples/RNStorybookFixture
+// folder. They're still useful as local smoke tests for anyone who has a
+// matching APK build at the same path, so the tests skip cleanly when the
+// file isn't present rather than failing in CI.
+const DEBUG_APK = process.env.PERCY_TEST_DEBUG_APK
+  ?? '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/debug/app-debug.apk';
+const RELEASE_APK = process.env.PERCY_TEST_RELEASE_APK
+  ?? '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/release/app-release.apk';
+
 describe('provisionApp — debug-build detection (item 2.3)', () => {
-  it('rejects a real debug APK with build_is_debug_variant', async () => {
+  skipIf(!existsSync(DEBUG_APK))('rejects a real debug APK with build_is_debug_variant', async () => {
     process.env.BROWSERSTACK_USERNAME = 'u';
     process.env.BROWSERSTACK_ACCESS_KEY = 'k';
-    const DEBUG_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/debug/app-debug.apk';
     // Stub fetch so we never actually hit BS — the guard must fire before that.
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
@@ -215,10 +225,9 @@ describe('provisionApp — debug-build detection (item 2.3)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   }, 30_000);
 
-  it('accepts the same APK when skipDebugBuildCheck is true', async () => {
+  skipIf(!existsSync(DEBUG_APK))('accepts the same APK when skipDebugBuildCheck is true', async () => {
     process.env.BROWSERSTACK_USERNAME = 'u';
     process.env.BROWSERSTACK_ACCESS_KEY = 'k';
-    const DEBUG_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/debug/app-debug.apk';
     // Stub fetch: recent_apps says cache hit so we don't actually upload.
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -230,10 +239,9 @@ describe('provisionApp — debug-build detection (item 2.3)', () => {
     expect(ref).toBe('bs://cached-debug-ref');
   }, 30_000);
 
-  it('accepts a release APK normally (no guard fires)', async () => {
+  skipIf(!existsSync(RELEASE_APK))('accepts a release APK normally (no guard fires)', async () => {
     process.env.BROWSERSTACK_USERNAME = 'u';
     process.env.BROWSERSTACK_ACCESS_KEY = 'k';
-    const RELEASE_APK = '/Users/aryankumar/Desktop/Percy/Percy-react-native-support/examples/RNStorybookFixture/android/app/build/outputs/apk/release/app-release.apk';
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -306,5 +314,62 @@ describe('provisionApp — error body scrubbing', () => {
     expect(caught.message).toContain('[redacted]');
     expect(caught.message).not.toContain('AbCdEfGhIjKlMnOpQrSt');
     expect(caught.message).not.toContain('BlAhBlAhBlAhBlAhBlAh');
+  });
+});
+
+describe('provisionApp — file presence + settle paths', () => {
+  beforeEach(() => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('throws bs_upload_failed when localPath does not exist', async () => {
+    await expect(
+      provisionApp('/tmp/this-apk-definitely-does-not-exist-xyz.apk', {
+        postUploadSettleMs: 0,
+        skipDebugBuildCheck: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'bs_upload_failed',
+    });
+  });
+
+  it('throws bs_upload_failed when localPath points at a directory, not a file', async () => {
+    await expect(
+      provisionApp(tmpdir(), {
+        postUploadSettleMs: 0,
+        skipDebugBuildCheck: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'bs_upload_failed',
+    });
+  });
+
+  it('honours postUploadSettleMs > 0 after a fresh upload', async () => {
+    // First call → no cache hit; force upload path. Second call seen by the
+    // settle timer.
+    const fetchMock = vi.fn()
+      // probe → no cache
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] })
+      // upload → success
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ app_url: 'bs://uploaded' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    const start = Date.now();
+    const ref = await provisionApp(apkPath, {
+      postUploadSettleMs: 25,
+      skipDebugBuildCheck: true,
+      uploadRetries: 1,
+    });
+    const elapsed = Date.now() - start;
+    expect(ref).toBe('bs://uploaded');
+    // Allow a small margin for setTimeout scheduling jitter.
+    expect(elapsed).toBeGreaterThanOrEqual(20);
   });
 });

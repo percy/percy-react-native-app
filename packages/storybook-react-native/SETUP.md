@@ -245,7 +245,7 @@ Every CLI failure produces a structured error code. Look up the `[error_code]` i
 
 ## 11. Reference example
 
-A complete working setup lives at [`examples/RNStorybookFixture/`](https://github.com/percy/percy-react-native-support/tree/main/examples/RNStorybookFixture) in this repo — clone, `npm install`, `npx expo run:ios`, and follow [§6](#6-run-percy).
+A complete working setup lives in the standalone [`percy/example-percy-storybook-react-native`](https://github.com/percy/example-percy-storybook-react-native) repo — clone, `npm install`, `npx expo run:ios`, and follow [§6](#6-run-percy).
 
 ---
 
@@ -256,7 +256,7 @@ Issues? File at https://github.com/percy/percy-react-native-support/issues.
 
 ## Library mode (BrowserStack App Automate)
 
-Everything above describes **CLI mode** — the `npx percy storybook-rn` command driving a local emulator/simulator. As of v0.2.0-alpha.0, `@percy/storybook-react-native` also ships a **library mode** that runs against BrowserStack App Automate from inside your existing WebdriverIO Appium tests.
+Everything above describes **CLI mode** — the `npx percy storybook-rn` command driving a local emulator/simulator. As of v0.2.0, `@percy/storybook-react-native` also ships a **library mode** that runs against BrowserStack App Automate from inside your existing WebdriverIO Appium tests.
 
 **When to pick which:**
 

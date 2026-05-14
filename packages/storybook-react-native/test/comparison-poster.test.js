@@ -7,7 +7,7 @@ vi.mock('@percy/sdk-utils', () => ({
 }));
 
 const utils = await import('@percy/sdk-utils');
-const { postSnapshotComparison } = await import('../src/comparison-poster.js');
+const { postSnapshotComparison, isPercyEnabled } = await import('../src/comparison-poster.js');
 
 /** Build a minimal valid PNG buffer with given dimensions encoded in IHDR. */
 function makePng(width, height) {
@@ -80,5 +80,22 @@ describe('postSnapshotComparison', () => {
         screenshotBase64: png.toString('base64'),
       }),
     ).rejects.toThrow(/Percy CLI is not running/);
+  });
+});
+
+describe('isPercyEnabled wrapper', () => {
+  it('returns true when @percy/sdk-utils resolves true', async () => {
+    utils.isPercyEnabled.mockResolvedValueOnce(true);
+    expect(await isPercyEnabled()).toBe(true);
+  });
+
+  it('returns false when @percy/sdk-utils resolves false', async () => {
+    utils.isPercyEnabled.mockResolvedValueOnce(false);
+    expect(await isPercyEnabled()).toBe(false);
+  });
+
+  it('swallows errors from @percy/sdk-utils and returns false', async () => {
+    utils.isPercyEnabled.mockRejectedValueOnce(new Error('CLI socket unreachable'));
+    expect(await isPercyEnabled()).toBe(false);
   });
 });

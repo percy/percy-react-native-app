@@ -1,7 +1,30 @@
 {
   "name": "@percy/storybook-react-native",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0",
   "description": "Percy SDK for visual testing of React Native Storybook components via Appium. Supports local emulator/simulator (CLI mode) and BrowserStack App Automate (library mode).",
+  "keywords": [
+    "percy",
+    "storybook",
+    "react-native",
+    "visual-testing",
+    "appium",
+    "app-automate",
+    "browserstack"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/percy/percy-react-native-support.git",
+    "directory": "packages/storybook-react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/percy/percy-react-native-support/issues"
+  },
+  "homepage": "https://github.com/percy/percy-react-native-support/tree/main/packages/storybook-react-native#readme",
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
   "type": "module",
   "main": "./index.js",
   "exports": {
@@ -11,13 +34,16 @@
   "files": [
     "index.js",
     "percy",
-    "src"
+    "src",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepublishOnly": "npm run lint && npm test"
   },
   "@percy/cli": {
     "commands": [
@@ -52,16 +78,6 @@
     "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": [
-    "percy",
-    "storybook",
-    "react-native",
-    "visual-testing",
-    "appium",
-    "app-automate",
-    "browserstack"
-  ],
-  "license": "MIT"
+    "node": ">=22.0.0"
+  }
 }

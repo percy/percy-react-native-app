@@ -96,3 +96,54 @@ describe('GenericProvider — sessionUrl()', () => {
     expect(ProviderResolver.resolve(driver).sessionUrl()).toBeUndefined();
   });
 });
+
+describe('AppAutomateProvider.supports — branch coverage gaps', () => {
+  it('returns false when driver is null', () => {
+    expect(AppAutomateProvider.supports(null)).toBe(false);
+  });
+
+  it('returns false when capabilities is missing entirely', () => {
+    expect(AppAutomateProvider.supports({})).toBe(false);
+  });
+
+  it('returns true when browserstack.user (legacy flat key) is present', () => {
+    expect(AppAutomateProvider.supports({
+      capabilities: { 'browserstack.user': 'u' },
+    })).toBe(true);
+  });
+
+  it('returns true when plain `userName` is present alongside a BS hostname', () => {
+    expect(AppAutomateProvider.supports({
+      capabilities: {
+        userName: 'u',
+        hostname: 'hub-cloud.browserstack.com',
+      },
+    })).toBe(true);
+  });
+
+  it('returns false when plain `userName` is present without a BS hostname', () => {
+    expect(AppAutomateProvider.supports({
+      capabilities: {
+        userName: 'u',
+        hostname: 'localhost',
+      },
+    })).toBe(false);
+  });
+
+  it('returns true when bstack:options.accessKey alone is present (no userName)', () => {
+    expect(AppAutomateProvider.supports({
+      capabilities: { 'bstack:options': { accessKey: 'k' } },
+    })).toBe(true);
+  });
+});
+
+describe('AppAutomateProvider.sessionUrl — sessionId variants', () => {
+  it('returns undefined when sessionId is null on the underlying driver', () => {
+    const driver = createMockDriver({
+      capabilities: { 'bstack:options': { userName: 'u', accessKey: 'k' } },
+      sessionId: null,
+    });
+    const provider = ProviderResolver.resolve(driver);
+    expect(provider.sessionUrl()).toBeUndefined();
+  });
+});

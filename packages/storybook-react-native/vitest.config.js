@@ -29,24 +29,29 @@ export default defineConfig({
         'coverage/**',
       ],
       thresholds: {
-        // Floor that reflects the suite as of the regions + review-findings
-        // push (149 tests). Two large surfaces drag the line/statement number
-        // below the round 80% mark:
-        //   - percy/buildAndProvision.js: subprocess (gradle/expo/xcodebuild)
-        //     invocation paths — covered for argument shape + error fan-out;
-        //     not unit-tested for actual subprocess exec because that hits
-        //     real toolchains during CI. Validated end-to-end by the example
-        //     repo's `npm run build` pipeline.
-        //   - percy/navigator/uiTapStrategy.js: demoted v9-only experimental
-        //     path. Validated empirically on the v9 sandbox but the deeply
-        //     mocked driver fixtures required for unit coverage would lock
-        //     in implementation details we still expect to churn.
+        // Floor that reflects the suite as of the post-example-removal +
+        // coverage-fillers push (~225 tests). Two surfaces still drag the
+        // global numbers down significantly:
+        //   - percy/buildAndProvision.js (~213 lines uncovered, 34% stmts):
+        //     subprocess (gradle/expo/xcodebuild) invocation paths — covered
+        //     for argument shape + error fan-out; not unit-tested for actual
+        //     subprocess exec because that hits real toolchains during CI.
+        //     Validated end-to-end by the example repo's `npm run build`
+        //     pipeline.
+        //   - percy/navigator/uiTapStrategy.js (~245 lines uncovered, 34%
+        //     stmts / 8% funcs): demoted v9-only experimental path.
+        //     Validated empirically on the v9 sandbox but the deeply mocked
+        //     driver fixtures required for unit coverage would lock in
+        //     implementation details we still expect to churn.
+        // Together they account for ~450 of the global uncovered lines.
+        // Other modules are 92%+ (most at 100%).
+        //
         // Raise these alongside new tests; do NOT lower without a comment
         // justifying why coverage is going backwards.
-        lines: 75,
-        functions: 70,
-        statements: 75,
-        branches: 75,
+        lines: 80,
+        functions: 85,
+        statements: 80,
+        branches: 85,
       },
     },
   },
