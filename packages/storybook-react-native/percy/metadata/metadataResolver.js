@@ -1,6 +1,6 @@
 import { Metadata } from './metadata.js';
 import { AndroidMetadata } from './androidMetadata.js';
-import { err } from '../../src/errors.js';
+import { IosMetadata } from './iosMetadata.js';
 
 /**
  * Pick the right Metadata subclass for the active driver session.
@@ -20,13 +20,7 @@ export class MetadataResolver {
     ).toLowerCase();
 
     if (platform === 'android') return new AndroidMetadata(driver);
-    if (platform === 'ios') {
-      throw err(
-        'unsupported_platform',
-        'iOS support is a Phase 2 deliverable for the App Automate transport.',
-        'Use Android for now, or contribute the iOS XCUITest selectors in percy/navigator/uiTapStrategy.js.',
-      );
-    }
+    if (platform === 'ios') return new IosMetadata(driver);
     // Permissive fallback — unknown platform still gets the base reader.
     return new Metadata(driver);
   }

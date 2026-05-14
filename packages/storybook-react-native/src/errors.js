@@ -32,6 +32,7 @@
  *   | 'build_artifact_not_found'
  *   | 'apple_signing_required'
  *   | 'unsupported_project_type'
+ *   | 'build_is_debug_variant'
  * } ErrorCode
  */
 
