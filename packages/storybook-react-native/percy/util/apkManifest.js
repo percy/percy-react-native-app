@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import AdmZip from 'adm-zip';
 
 /**
@@ -20,18 +21,30 @@ const CHUNK_TYPE_XML_START_ELEMENT = 0x0102;
 const STRING_POOL_FLAG_UTF8 = (1 << 8);
 const TYPE_INT_BOOLEAN = 0x12;
 
+/** Hard cap on APK size we'll attempt to read via adm-zip. */
+const MAX_APK_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB matches BS upload limit
+
 /**
  * Extract AndroidManifest.xml from an APK + parse the `debuggable` flag.
+ *
+ * Returns `debuggable: null` on ANY structural failure — caller must treat
+ * "unknown" distinctly from "known-false". Falsely reporting `false` would
+ * let a debuggable build slip past the pre-upload check and redbox on the
+ * cloud device.
  *
  * @param {string} apkPath
  * @returns {Promise<{ debuggable: boolean | null, source: 'binary' | 'absent' }>}
  *   - `debuggable: true`  → APK is debuggable (expects Metro at runtime)
  *   - `debuggable: false` → APK is not debuggable (release-shape)
- *   - `debuggable: null`  → could not parse manifest
+ *   - `debuggable: null`  → could not parse manifest; caller should not infer safety
  */
 export async function readApkDebuggable(apkPath) {
   let manifestBuf;
   try {
+    const stat = await fs.stat(apkPath);
+    if (stat.size > MAX_APK_SIZE_BYTES) {
+      return { debuggable: null, source: 'absent' };
+    }
     const zip = new AdmZip(apkPath);
     const entry = zip.getEntry('AndroidManifest.xml');
     if (!entry) return { debuggable: null, source: 'absent' };
@@ -40,12 +53,25 @@ export async function readApkDebuggable(apkPath) {
     return { debuggable: null, source: 'absent' };
   }
 
-  return parseAxmlDebuggable(manifestBuf);
+  try {
+    return parseAxmlDebuggable(manifestBuf);
+  } catch {
+    return { debuggable: null, source: 'absent' };
+  }
 }
 
 /**
  * Walk an AXML buffer and return whether the application element has
- * `android:debuggable="true"`. Returns `false` if no debuggable attr is found.
+ * `android:debuggable="true"`.
+ *
+ * Returns `{ debuggable: false, source: 'binary' }` only when the AXML
+ * was parsed cleanly AND no `debuggable` attribute was present — that
+ * matches a real release build (absent → false per Android convention).
+ *
+ * Returns `{ debuggable: null, source: 'absent' }` on ANY structural
+ * failure (truncation, wrong root chunk, missing string pool before
+ * elements). "Unknown" must not be confused with "known-false" by the
+ * caller — falsely returning `false` would let a debuggable APK upload.
  *
  * Strategy: parse the string pool, then scan every start-element's
  * attributes for the `debuggable` name index.
@@ -59,26 +85,39 @@ export function parseAxmlDebuggable(buf) {
   const rootType = buf.readUInt16LE(0);
   const rootHeaderSize = buf.readUInt16LE(2);
   if (rootType !== CHUNK_TYPE_XML) return { debuggable: null, source: 'absent' };
+  if (rootHeaderSize < 8 || rootHeaderSize > buf.length) {
+    return { debuggable: null, source: 'absent' };
+  }
 
   let offset = rootHeaderSize;
   let stringPool = null;
+  let sawStartElement = false;
   let debuggable = false;
 
   while (offset + 8 <= buf.length) {
     const chunkType = buf.readUInt16LE(offset);
     const chunkHeaderSize = buf.readUInt16LE(offset + 2);
     const chunkSize = buf.readUInt32LE(offset + 4);
-    if (chunkSize === 0 || chunkSize > buf.length - offset) break;
+    if (chunkSize < 8 || chunkSize > buf.length - offset) {
+      // Truncated or malformed chunk — cannot trust anything after this point.
+      return { debuggable: null, source: 'absent' };
+    }
 
     if (chunkType === CHUNK_TYPE_STRING_POOL) {
       stringPool = parseStringPool(buf, offset, chunkHeaderSize);
-    } else if (chunkType === CHUNK_TYPE_XML_START_ELEMENT && stringPool) {
+      if (stringPool === null) return { debuggable: null, source: 'absent' };
+    } else if (chunkType === CHUNK_TYPE_XML_START_ELEMENT) {
+      // A start-element before the string pool means we can't resolve
+      // attribute names — bail rather than guess.
+      if (!stringPool) return { debuggable: null, source: 'absent' };
+      sawStartElement = true;
       // After the chunk header:
       //   line number (4) + comment ref (4) — these are part of the
       //   "ResXMLTree_node" header. Then the start-element body:
       //   ns (4) + name (4) + attributeStart (2) + attributeSize (2)
       //   + attributeCount (2) + ... (more counts we don't need)
       const bodyOffset = offset + chunkHeaderSize;
+      if (bodyOffset + 14 > buf.length) return { debuggable: null, source: 'absent' };
       const attrStartRel = buf.readUInt16LE(bodyOffset + 8);
       const attrSize = buf.readUInt16LE(bodyOffset + 10);
       const attrCount = buf.readUInt16LE(bodyOffset + 12);
@@ -109,6 +148,13 @@ export function parseAxmlDebuggable(buf) {
     }
     offset += chunkSize;
   }
+
+  // We parsed the manifest end-to-end without hitting a `debuggable` attr.
+  // A real release APK omits the attr entirely — Android treats absence as
+  // false. We can confidently report `false` only if we saw at least one
+  // start element resolved through the string pool; otherwise the parse
+  // didn't actually inspect anything and we should report unknown.
+  if (!sawStartElement) return { debuggable: null, source: 'absent' };
   return { debuggable, source: 'binary' };
 }
 
@@ -131,6 +177,7 @@ export function parseAxmlDebuggable(buf) {
  * @param {number} headerSize
  */
 function parseStringPool(buf, chunkOffset, headerSize) {
+  if (chunkOffset + 28 > buf.length) return null;
   const stringCount = buf.readUInt32LE(chunkOffset + 8);
   const flags = buf.readUInt32LE(chunkOffset + 16);
   const stringsStart = buf.readUInt32LE(chunkOffset + 20);
@@ -138,6 +185,8 @@ function parseStringPool(buf, chunkOffset, headerSize) {
 
   const indexArrayStart = chunkOffset + headerSize;
   const stringDataStart = chunkOffset + stringsStart;
+  if (indexArrayStart + stringCount * 4 > buf.length) return null;
+  if (stringDataStart > buf.length) return null;
 
   const result = new Array(stringCount);
   for (let i = 0; i < stringCount; i++) {
@@ -147,7 +196,11 @@ function parseStringPool(buf, chunkOffset, headerSize) {
       result[i] = '';
       continue;
     }
-    result[i] = isUtf8 ? readUtf8String(buf, absOffset) : readUtf16String(buf, absOffset);
+    try {
+      result[i] = isUtf8 ? readUtf8String(buf, absOffset) : readUtf16String(buf, absOffset);
+    } catch {
+      result[i] = '';
+    }
   }
   return result;
 }

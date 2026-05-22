@@ -13,7 +13,33 @@ const DEFAULTS = {
   uploadRetries: 3,
   uploadTimeoutMs: 120_000,
   postUploadSettleMs: 5_000, // defensive — until Phase 1 PoC measures actual readiness
+  probeTimeoutMs: 10_000,
 };
+
+/**
+ * Error codes that must not be retried — they're authentication / payload /
+ * configuration problems that won't fix themselves on a re-send. Module-level
+ * so the upload retry loop and any future caller share one definition.
+ */
+const TERMINAL_UPLOAD_CODES = new Set([
+  'bs_upload_too_large',
+  'bs_upload_failed',
+  'bs_credentials_missing',
+]);
+
+/**
+ * Strip anything that looks like a BrowserStack access key from a response
+ * body before logging it. Access keys are 20-char alphanumerics; surrounding
+ * them with non-word chars lets us catch them embedded in JSON error blobs
+ * without false-positive-truncating regular content.
+ *
+ * @param {string} body
+ */
+function scrubSecrets(body) {
+  return body
+    .replace(/[A-Za-z0-9]{20,}/g, '[redacted]')
+    .slice(0, 200);
+}
 
 /**
  * Read BrowserStack credentials from opts or env. Throws if missing.
@@ -31,6 +57,17 @@ function readCredentials(opts) {
       'Set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY env vars, or pass them as opts.credentials.',
     );
   }
+  // `userName:accessKey` is base64'd into the Basic auth header. A colon in
+  // the userName splits the header on the wire and silently corrupts the
+  // accessKey BS receives. Fail fast with a clear error instead of an opaque
+  // 401 mid-upload.
+  if (typeof userName !== 'string' || userName.includes(':')) {
+    throw err(
+      'bs_credentials_missing',
+      'BrowserStack userName must be a string without colons.',
+      'Pass the userName from your BrowserStack account; do not paste the entire userName:accessKey string.',
+    );
+  }
   return { userName, accessKey };
 }
 
@@ -39,14 +76,24 @@ function basicAuthHeader(userName, accessKey) {
 }
 
 /**
- * Compute sha256 of the file at `localPath` and slice to 40 chars to fit
+ * Compute sha256 of the supplied buffer and slice to 40 chars to fit
  * BrowserStack's `custom_id` charset constraints ([A-Za-z0-9._-], max 100).
+ *
+ * @param {Buffer} buf
+ */
+function bufferCustomId(buf) {
+  return createHash('sha256').update(buf).digest('hex').slice(0, 40);
+}
+
+/**
+ * Back-compat shim — older external callers read the customId from a path
+ * directly. Internally we now hash a once-read buffer to avoid double-reading
+ * large APKs.
  *
  * @param {string} localPath
  */
 async function fileCustomId(localPath) {
-  const buf = await fs.readFile(localPath);
-  return createHash('sha256').update(buf).digest('hex').slice(0, 40);
+  return bufferCustomId(await fs.readFile(localPath));
 }
 
 /**
@@ -70,14 +117,14 @@ async function probeRecentApps(authHeader, customId, timeoutMs) {
     if (res.status === 404) return undefined;
     if (!res.ok) {
       // Treat as miss — don't fail provisionApp because the probe optimization didn't hit.
-      log.debug(`recent_apps probe non-OK: ${res.status}`);
+      log.debug(`[storybook-rn] recent_apps probe non-OK: ${res.status}`);
       return undefined;
     }
     const json = /** @type {Array<{ app_url?: string }>} */ (await res.json());
     if (!Array.isArray(json) || json.length === 0) return undefined;
     return json[0]?.app_url;
   } catch (cause) {
-    log.debug(`recent_apps probe failed: ${cause instanceof Error ? cause.message : cause}`);
+    log.debug(`[storybook-rn] recent_apps probe failed: ${cause instanceof Error ? cause.message : cause}`);
     return undefined;
   } finally {
     clearTimeout(timer);
@@ -89,22 +136,21 @@ async function probeRecentApps(authHeader, customId, timeoutMs) {
  *
  * Retries on 5xx and network errors only. 4xx fails fast.
  *
+ * The `data` Buffer is read once by the caller and shared across retries —
+ * a fresh FormData wrapper is needed each attempt (FormData/Blob is consumed
+ * by fetch and not reusable), but the underlying byte payload is shared by
+ * reference so retries don't 3x our peak memory.
+ *
  * @param {string} authHeader
- * @param {string} localPath
+ * @param {Buffer} data           pre-read file contents
+ * @param {string} filename       basename for the multipart part
  * @param {string} customId
  * @param {{ retries: number, timeoutMs: number }} retryOpts
  */
-async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
-  const stat = await fs.stat(localPath).catch(() => null);
-  if (!stat || !stat.isFile()) {
-    throw err(
-      'bs_upload_failed',
-      `App file not found at ${localPath}.`,
-      'Pass a valid path to a built .apk or .ipa.',
-    );
-  }
-  const data = await fs.readFile(localPath);
-  const filename = basename(localPath);
+async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) {
+  // Single Blob backed by the existing Buffer — retries reuse the underlying
+  // bytes through fresh FormData wrappers below.
+  const fileBlob = new Blob([data]);
 
   let lastErr;
   for (let attempt = 1; attempt <= retryOpts.retries; attempt++) {
@@ -112,7 +158,7 @@ async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
     const timer = setTimeout(() => ctrl.abort(), retryOpts.timeoutMs);
     try {
       const form = new FormData();
-      form.append('file', new Blob([new Uint8Array(data)]), filename);
+      form.append('file', fileBlob, filename);
       form.append('custom_id', customId);
       log.info(`[storybook-rn] uploading ${filename} (${(data.length / 1024 / 1024).toFixed(1)} MB) — attempt ${attempt}/${retryOpts.retries}`);
       const res = await fetch(UPLOAD_URL, {
@@ -126,7 +172,7 @@ async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_too_large',
-          `BrowserStack rejected the upload (413). ${body.slice(0, 200)}`,
+          `BrowserStack rejected the upload (413). ${scrubSecrets(body)}`,
           'Reduce app size or contact BrowserStack support to raise the per-account limit.',
         );
       }
@@ -134,20 +180,20 @@ async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_failed',
-          `BrowserStack upload failed with HTTP ${res.status}: ${body.slice(0, 200)}`,
+          `BrowserStack upload failed with HTTP ${res.status}: ${scrubSecrets(body)}`,
           'Verify BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY and try again.',
         );
       }
       if (!res.ok) {
         // 5xx — retry
         const body = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+        throw new Error(`HTTP ${res.status}: ${scrubSecrets(body)}`);
       }
       const json = /** @type {{ app_url?: string }} */ (await res.json());
       if (!json.app_url) {
         throw err(
           'bs_upload_failed',
-          `BrowserStack returned 200 but no app_url in response: ${JSON.stringify(json)}`,
+          `BrowserStack returned 200 but no app_url in response: ${scrubSecrets(JSON.stringify(json))}`,
         );
       }
       return json.app_url;
@@ -156,7 +202,7 @@ async function uploadWithRetry(authHeader, localPath, customId, retryOpts) {
       // Typed PercyStorybookRNError → terminal (4xx — auth/payload/etc.).
       // Generic Error → transient (5xx, network, abort) and worth retrying.
       const code = cause && /** @type {{ code?: string }} */ (cause).code;
-      if (code && ['bs_upload_too_large', 'bs_upload_failed'].includes(code)) {
+      if (code && TERMINAL_UPLOAD_CODES.has(code)) {
         throw cause;
       }
       if (attempt < retryOpts.retries) {
@@ -231,16 +277,29 @@ export async function provisionApp(localPath, opts = {}) {
 
   const { userName: u, accessKey: k } = readCredentials(opts);
   const auth = basicAuthHeader(u, k);
-  const customId = await fileCustomId(localPath);
+
+  // Read the file once and share the Buffer for both hashing and (if needed)
+  // uploading. Large APKs (50 MB–200 MB) plus 2× redundant reads = pointless
+  // I/O and memory pressure.
+  const stat = await fs.stat(localPath).catch(() => null);
+  if (!stat || !stat.isFile()) {
+    throw err(
+      'bs_upload_failed',
+      `App file not found at ${localPath}.`,
+      'Pass a valid path to a built .apk or .ipa.',
+    );
+  }
+  const data = await fs.readFile(localPath);
+  const customId = bufferCustomId(data);
 
   // Server-side dedup probe — skip upload if BS already has this content-hash.
-  const cached = await probeRecentApps(auth, customId, 10_000);
+  const cached = await probeRecentApps(auth, customId, merged.probeTimeoutMs);
   if (cached) {
     log.info(`[storybook-rn] reusing existing BrowserStack upload (custom_id=${customId}).`);
     return assertValidAppReference(cached);
   }
 
-  const appUrl = await uploadWithRetry(auth, localPath, customId, {
+  const appUrl = await uploadWithRetry(auth, data, basename(localPath), customId, {
     retries: merged.uploadRetries,
     timeoutMs: merged.uploadTimeoutMs,
   });

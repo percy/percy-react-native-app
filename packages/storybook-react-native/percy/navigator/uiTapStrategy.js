@@ -109,11 +109,6 @@ async function pollForElement(appiumDriver, selector, timeoutMs) {
 }
 
 /**
- * Cold-boot readiness — polls for the drawer toggle until present or until
- * the cold-boot ceiling. Distinct from `nav_element_not_found` so the
- * circuit breaker classifies correctly.
- */
-/**
  * Per-platform selector cascade for the Storybook RN drawer toggle.
  * Android: testID → resource-id (NOT content-desc). iOS XCUITest reliably
  * mirrors testID → accessibilityIdentifier (queried via `~`).

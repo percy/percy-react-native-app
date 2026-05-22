@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+# To publish: click "Draft a new release" in the GitHub UI, tag as `vX.Y.Z`
+# matching packages/storybook-react-native/package.json `version`, target main,
+# fill in notes, click "Publish release". This workflow then:
+#   1. Re-runs lint + tests (defence in depth against shipping broken code).
+#   2. Runs `npm publish` with provenance.
+#
+# Requires the `NPM_TOKEN` secret to be set on the repo (Automation token,
+# scope: @percy + 2FA-bypass-for-CI). The npm dist-tag is read from
+# `publishConfig.tag` in package.json (`latest` for stable releases).
+
+jobs:
+  publish:
+    name: Publish @percy/storybook-react-native
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for npm provenance attestations.
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: packages/storybook-react-native
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Release tag '$GITHUB_REF_NAME' does not match package.json version '$PKG_VERSION'"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

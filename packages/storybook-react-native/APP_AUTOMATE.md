@@ -83,6 +83,56 @@ await runSession(driver, async () => {
 
 The `runSession(driver, fn)` helper wraps your iteration in `try/finally` and ensures `driver.deleteSession()` runs even when the test throws — preventing dangling BrowserStack sessions from burning quota.
 
+## Snapshot options (flat surface)
+
+`percyStorybookSnapshot(driver, story, options)` takes a **flat** options object. Navigation-only keys (`navigationStrategy`, `appScheme`, `appPackage`, `renderMs`, `coldBootMaxMs`, `globalNavigationBudgetMs`, `testIdPollMaxMs`, `stabilityPollMaxMs`, `stabilityMaxAttempts`, `stabilitySettleMs`, `cacheNavigatorState`) are consumed by the SDK; everything else is forwarded to `@percy/appium-app`'s `percyScreenshot`. That includes the full `@percy/percy-appium-js` option surface:
+
+```js
+await percyStorybookSnapshot(driver, story, {
+  // --- Region options (the most common reason to use the flat surface) ---
+  ignoreRegionXpaths: ['//XCUIElementTypeOther[@name="header"]'],
+  ignoreRegionAccessibilityIds: ['toast'],
+  ignoreRegionAppiumElements: [await driver.$('~live-clock')],
+  customIgnoreRegions: [{ top: 0, bottom: 50, left: 0, right: 360 }],
+  considerRegionXpaths: ['//*[@id="content"]'],
+  considerRegionAccessibilityIds: ['main-content'],
+  considerRegionAppiumElements: [await driver.$('~main')],
+  customConsiderRegions: [{ top: 100, bottom: 800, left: 0, right: 360 }],
+
+  // --- Full-page + scroll ---
+  fullPage: true,
+  screenLengths: 3,
+  scrollableXpath: '//XCUIElementTypeScrollView',
+  scrollableId: 'feed-scroll',
+  topScrollviewOffset: 0,
+  bottomScrollviewOffset: 0,
+  androidScrollAreaPercentage: 80,
+  scrollSpeed: 100,
+
+  // --- Tile / metadata ---
+  statusBarHeight: 24,
+  navigationBarHeight: 0,
+  orientation: 'portrait',           // 'portrait' | 'landscape'
+  deviceName: 'Pixel 8 (Android 14)', // override auto-derived label
+
+  // --- Workflow ---
+  sync: true,                         // wait for diff completion
+  testCase: 'forms-button-primary',
+  labels: ['nightly', 'a11y'],
+
+  // --- Animation ---
+  freezeAnimatedImage: true,          // default true; flip to false to opt out
+
+  // --- Navigation (consumed by the SDK, NOT forwarded) ---
+  navigationStrategy: 'deeplink',
+  appScheme: 'myapp',
+  appPackage: 'com.acme.storybook',
+  renderMs: 500,
+});
+```
+
+The legacy nested escape hatch `snapshot: { ... }` is still honored and wins last for backwards compat with the pre-flat API.
+
 ## App provisioning
 
 `provisionApp(localPath)` does:

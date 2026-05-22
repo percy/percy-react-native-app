@@ -70,7 +70,7 @@ percy exec -- npx percy storybook-rn       # snapshot + upload
 
 ## Reference example
 
-A complete working RN + Storybook + Percy setup lives at [`examples/RNStorybookFixture/`](../../examples/RNStorybookFixture) in this repo.
+A complete working RN + Storybook + Percy setup lives in the standalone [`percy/example-percy-storybook-react-native`](https://github.com/percy/example-percy-storybook-react-native) repo.
 
 ## Troubleshooting
 

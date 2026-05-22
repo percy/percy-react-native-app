@@ -11,6 +11,10 @@
     "lint": "npm run lint --workspaces --if-present"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^9.39.4"
   }
 }

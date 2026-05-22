@@ -4,7 +4,8 @@ import { IosMetadata } from './iosMetadata.js';
 
 /**
  * Pick the right Metadata subclass for the active driver session.
- * Phase 1 ships Android only; iOS Phase 2.
+ * Supports `android` and `ios` platforms; unknown platforms fall back to
+ * the permissive base `Metadata` reader so external test rigs don't crash.
  *
  * Mirrors @percy/percy-appium-js's metadata/metadataResolver.js shape.
  */
@@ -14,14 +15,15 @@ export class MetadataResolver {
    * @returns {Metadata}
    */
   static resolve(driver) {
-    const caps = driver.capabilities ?? {};
+    const safeDriver = driver ?? { capabilities: {} };
+    const caps = safeDriver.capabilities ?? {};
     const platform = String(
       caps['appium:platformName'] ?? caps.platformName ?? '',
     ).toLowerCase();
 
-    if (platform === 'android') return new AndroidMetadata(driver);
-    if (platform === 'ios') return new IosMetadata(driver);
+    if (platform === 'android') return new AndroidMetadata(safeDriver);
+    if (platform === 'ios') return new IosMetadata(safeDriver);
     // Permissive fallback — unknown platform still gets the base reader.
-    return new Metadata(driver);
+    return new Metadata(safeDriver);
   }
 }
