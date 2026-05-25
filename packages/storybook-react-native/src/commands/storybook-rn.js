@@ -2,6 +2,7 @@ import command, { PercyConfig } from '@percy/cli-command';
 import { mergeConfig, PERCY_CONFIG_SCHEMA } from '../config.js';
 import { run } from '../runner.js';
 import { PercyStorybookRNError } from '../errors.js';
+import { enumerateStories } from '../story-enumerator.js';
 import doctor from './doctor.js';
 import init from './init.js';
 
@@ -11,6 +12,10 @@ import init from './init.js';
  * Reads `.percy.yml` → `storybookRn:` config, connects to Appium, drives
  * Storybook RN's HTTP channel server (port 7007) to render each story,
  * captures screenshots via Appium, uploads to Percy via the local CLI server.
+ *
+ * Story selection (in order of precedence):
+ *   1. --stories flag (comma-separated explicit list)
+ *   2. Auto-enumeration from .rnstorybook/main.{ts,js} + .stories.* files
  *
  * Subcommands:
  *   - `percy storybook-rn:doctor` — local preflight checks
@@ -27,8 +32,20 @@ export default command('storybook-rn', {
     },
     {
       name: 'stories',
-      description: 'Explicit comma-separated story IDs to capture (e.g. "example-button--primary,example-page--default"). Bypasses enumeration.',
+      description: 'Explicit comma-separated story IDs to capture (e.g. "example-button--primary"). Overrides auto-enumeration.',
       type: 'string',
+    },
+    {
+      name: 'config-dir',
+      description: 'Path to the Storybook RN config dir (default: .rnstorybook).',
+      type: 'string',
+      attribute: 'configDir',
+    },
+    {
+      name: 'dry-run',
+      description: 'Print the discovered stories without uploading anything.',
+      type: 'boolean',
+      attribute: 'dryRun',
     },
   ],
   config: {
@@ -43,7 +60,32 @@ export default command('storybook-rn', {
     config.include = [flags.include];
   }
 
-  const stories = parseStoriesFlag(flags.stories);
+  let stories;
+  try {
+    if (flags.stories) {
+      stories = parseStoriesFlag(flags.stories);
+      log.info(`Using ${stories.length} stories from --stories flag.`);
+    } else {
+      const configDir = flags.configDir || '.rnstorybook';
+      log.info(`Auto-enumerating stories from ${configDir}/...`);
+      stories = await enumerateStories(process.cwd(), configDir);
+      log.info(`Discovered ${stories.length} story/stories.`);
+    }
+  } catch (e) {
+    if (e instanceof PercyStorybookRNError) {
+      log.error(e.toCLIString());
+      return exit(1, e.message, false);
+    }
+    throw e;
+  }
+
+  if (flags.dryRun) {
+    log.info('Discovered stories (--dry-run; not uploading):');
+    for (const s of stories) {
+      log.info(`  - ${s.id}  (${s.componentTitle} / ${s.name})`);
+    }
+    return;
+  }
 
   log.info('Starting Percy Storybook RN run...');
 
@@ -63,15 +105,9 @@ export default command('storybook-rn', {
 });
 
 /**
- * Parses --stories "id1,id2,id3" into an array of StoryDescriptors.
- * Story IDs follow Storybook's "kind--variant" convention; we split the
- * last "--" to derive componentTitle vs name.
- *
- * @param {string | undefined} flag
- * @returns {Array<{ id: string, name: string, componentTitle: string }>}
+ * @param {string} flag  comma-separated story IDs
  */
 function parseStoriesFlag(flag) {
-  if (!flag) return [];
   return flag
     .split(',')
     .map((raw) => raw.trim())

@@ -1,19 +1,49 @@
 {
   "name": "@percy/storybook-react-native",
-  "version": "0.1.0-alpha.0",
-  "description": "Percy SDK for visual testing of React Native Storybook components via Appium.",
+  "version": "0.2.0",
+  "description": "Percy SDK for visual testing of React Native Storybook components via Appium. Supports local emulator/simulator (CLI mode) and BrowserStack App Automate (library mode).",
+  "keywords": [
+    "percy",
+    "storybook",
+    "react-native",
+    "visual-testing",
+    "appium",
+    "app-automate",
+    "browserstack"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/percy/percy-react-native-support.git",
+    "directory": "packages/storybook-react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/percy/percy-react-native-support/issues"
+  },
+  "homepage": "https://github.com/percy/percy-react-native-support/tree/main/packages/storybook-react-native#readme",
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
   "type": "module",
-  "main": "./src/index.js",
+  "main": "./index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./index.js",
+    "./cli": "./src/index.js"
   },
   "files": [
-    "src"
+    "index.js",
+    "percy",
+    "src",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src test || true"
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "prepublishOnly": "npm run lint && npm test"
   },
   "@percy/cli": {
     "commands": [
@@ -21,28 +51,33 @@
     ]
   },
   "dependencies": {
+    "@babel/parser": "^7.29.3",
     "@percy/cli-command": "^1.30.0",
     "@percy/config": "^1.30.0",
     "@percy/logger": "^1.30.0",
     "@percy/sdk-utils": "^1.30.0",
+    "adm-zip": "^0.5.17",
     "webdriverio": "^9.0.0",
     "ws": "^8.18.0"
   },
+  "peerDependencies": {
+    "@percy/appium-app": "~2.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@percy/appium-app": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@percy/appium-app": "~2.1.0",
     "@percy/cli": "^1.31.12",
+    "@vitest/coverage-v8": "^2.0.0",
     "appium": "^2.19.0",
     "appium-xcuitest-driver": "^8.4.3",
+    "eslint": "^9.10.0",
     "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": [
-    "percy",
-    "storybook",
-    "react-native",
-    "visual-testing",
-    "appium"
-  ],
-  "license": "MIT"
+    "node": ">=22.0.0"
+  }
 }

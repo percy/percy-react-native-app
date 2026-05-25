@@ -1,29 +1,53 @@
 # Percy Storybook React Native
 
-Visual regression testing for React Native components rendered via [Storybook for React Native](https://github.com/storybookjs/react-native), running on real iOS Simulators or Android emulators driven by Appium.
+Visual regression testing for [React Native](https://reactnative.dev) components rendered via [Storybook for React Native](https://github.com/storybookjs/react-native), captured on real iOS Simulators or Android emulators driven by Appium, uploaded to [Percy](https://percy.io).
 
-This is a monorepo. Packages:
+## Repo layout
 
-| Package | Status |
+| Package | Description |
 |---|---|
-| [`@percy/storybook-react-native`](./packages/storybook-react-native) | 🚧 In development (Phase 1) |
-| `@percy/storybook-react-native-addon` (optional Storybook addon) | Planned |
-| `examples/RNStorybookFixture` (reference RN app) | Planned |
+| [`packages/storybook-react-native`](./packages/storybook-react-native) | The `@percy/storybook-react-native` SDK + CLI. **Start here.** |
 
-## Plan
+A working Expo + Storybook-RN fixture lives in the standalone [`percy/example-percy-storybook-react-native`](https://github.com/percy/example-percy-storybook-react-native) repo.
 
-Active execution plan: [`docs/plans/2026-04-27-002-feat-storybook-react-native-component-testing-v2-plan.md`](./docs/plans/2026-04-27-002-feat-storybook-react-native-component-testing-v2-plan.md)
+## Get started
 
-Original v1 plan is preserved as research record only and is marked superseded.
+➡ **[`packages/storybook-react-native/SETUP.md`](./packages/storybook-react-native/SETUP.md)** — complete setup walkthrough, troubleshooting, and configuration reference.
 
-## Quickstart (developing the SDK)
+## Quickstart
 
 ```bash
-npm install
-npm test
-npm run build
+npm install --save-dev @percy/cli @percy/storybook-react-native
+npx @percy/cli storybook-rn:init
+# Add `enableWebsockets: true` to .rnstorybook/index — see SETUP.md §4
+export PERCY_TOKEN=app_xxxxxxxx
+npx percy storybook-rn:doctor
+npx percy exec -- npx percy storybook-rn
 ```
 
-## Local dev loop (testing the SDK against a real RN app)
+## Trying the reference example
 
-See the "Local Development & Testing" section of the v2 plan for the full step-by-step. iOS Simulator on Mac is the recommended week-1 path.
+```bash
+git clone https://github.com/percy/example-percy-storybook-react-native.git
+cd example-percy-storybook-react-native
+npm install
+npx expo run:ios --device "iPhone 16"      # cold build: ~10 min
+# (in another terminal)
+npx appium --port 4723
+# (in another terminal, back at repo root)
+export PERCY_TOKEN=app_xxxxxxxx
+npx percy exec -- npx percy storybook-rn
+```
+
+A Percy build URL prints when the run completes. Open it to see one snapshot per story.
+
+## Status
+
+- ✅ End-to-end pipeline verified on iPhone 16 Simulator with iOS 18.4
+- ✅ Auto story enumeration from `.rnstorybook/main.{ts,js}` + `.stories.*` files
+- ✅ Reuses Percy's existing CLI upload pipeline (no new backend)
+- ✅ 149 unit tests passing across local emulator (CLI mode) and BrowserStack App Automate (library mode)
+
+## License
+
+MIT
