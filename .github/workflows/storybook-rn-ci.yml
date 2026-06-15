@@ -6,10 +6,14 @@ on:
     paths:
       - 'packages/storybook-react-native/**'
       - '.github/workflows/storybook-rn-ci.yml'
+      - 'package.json'
+      - 'package-lock.json'
   pull_request:
     paths:
       - 'packages/storybook-react-native/**'
       - '.github/workflows/storybook-rn-ci.yml'
+      - 'package.json'
+      - 'package-lock.json'
 
 jobs:
   test:
