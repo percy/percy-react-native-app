@@ -3,15 +3,88 @@ import { existsSync, promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFileSync, mkdtempSync } from 'node:fs';
+import AdmZip from 'adm-zip';
 import {
   provisionApp,
   useAppReference,
   __forTesting,
 } from '../../percy/provisionApp.js';
 
+/**
+ * Build a real .apk (ZIP) on disk whose AndroidManifest.xml is a synthesized
+ * binary-AXML manifest declaring android:debuggable=<bool>. Lets us exercise
+ * provisionApp's pre-upload debug-build guard without a binary APK fixture.
+ * (AXML byte layout mirrors apkManifest.test.js's builders.)
+ */
+function writeDebuggableApk(dir, name, debuggable) {
+  // String pool (UTF-8): ['debuggable', 'application'].
+  const strings = ['debuggable', 'application'];
+  const HEADER_SIZE = 28;
+  const encoded = strings.map((s) => {
+    const bytes = Buffer.from(s, 'utf8');
+    return Buffer.concat([Buffer.from([s.length, bytes.length]), bytes, Buffer.from([0x00])]);
+  });
+  const indexArray = Buffer.alloc(strings.length * 4);
+  let run = 0;
+  encoded.forEach((b, i) => { indexArray.writeUInt32LE(run, i * 4); run += b.length; });
+  const stringData = Buffer.concat(encoded);
+  const padLen = (4 - (stringData.length % 4)) % 4;
+  const padded = Buffer.concat([stringData, Buffer.alloc(padLen)]);
+  const stringsStart = HEADER_SIZE + indexArray.length;
+  const poolHeader = Buffer.alloc(HEADER_SIZE);
+  poolHeader.writeUInt16LE(0x0001, 0);
+  poolHeader.writeUInt16LE(HEADER_SIZE, 2);
+  poolHeader.writeUInt32LE(stringsStart + padded.length, 4);
+  poolHeader.writeUInt32LE(strings.length, 8);
+  poolHeader.writeUInt32LE(0, 12);
+  poolHeader.writeUInt32LE(0x100, 16); // UTF-8
+  poolHeader.writeUInt32LE(stringsStart, 20);
+  poolHeader.writeUInt32LE(0, 24);
+  const pool = Buffer.concat([poolHeader, indexArray, padded]);
+
+  // Start element <application android:debuggable=<bool>>.
+  const EL_HEADER = 16;
+  const BODY_HEAD = 16;
+  const ATTR_SIZE = 20;
+  const body = Buffer.alloc(BODY_HEAD + ATTR_SIZE);
+  body.writeInt32LE(-1, 0);
+  body.writeInt32LE(1, 4);            // element name = 'application'
+  body.writeUInt16LE(BODY_HEAD, 8);
+  body.writeUInt16LE(ATTR_SIZE, 10);
+  body.writeUInt16LE(1, 12);          // 1 attribute
+  body.writeUInt16LE(0, 14);
+  body.writeInt32LE(-1, BODY_HEAD + 0);
+  body.writeInt32LE(0, BODY_HEAD + 4); // attr name = 'debuggable'
+  body.writeInt32LE(-1, BODY_HEAD + 8);
+  body.writeUInt16LE(8, BODY_HEAD + 12);
+  body.writeUInt8(0, BODY_HEAD + 14);
+  body.writeUInt8(0x12, BODY_HEAD + 15); // TYPE_INT_BOOLEAN
+  body.writeInt32LE(debuggable ? 1 : 0, BODY_HEAD + 16);
+  const elHeader = Buffer.alloc(EL_HEADER);
+  elHeader.writeUInt16LE(0x0102, 0);
+  elHeader.writeUInt16LE(EL_HEADER, 2);
+  elHeader.writeUInt32LE(EL_HEADER + body.length, 4);
+  elHeader.writeUInt32LE(0, 8);
+  elHeader.writeInt32LE(-1, 12);
+  const el = Buffer.concat([elHeader, body]);
+
+  const root = Buffer.alloc(8);
+  root.writeUInt16LE(0x0003, 0);
+  root.writeUInt16LE(8, 2);
+  root.writeUInt32LE(8 + pool.length + el.length, 4);
+  const manifest = Buffer.concat([root, pool, el]);
+
+  const zip = new AdmZip();
+  zip.addFile('AndroidManifest.xml', manifest);
+  zip.addFile('classes.dex', Buffer.from('not-a-real-dex'));
+  const p = join(dir, name);
+  zip.writeZip(p);
+  return p;
+}
+
 const skipIf = (cond) => (cond ? it.skip : it);
 
-const { fileCustomId, buildAuthHeader } = __forTesting;
+const { fileCustomId, buildAuthHeader, readCredentials } = __forTesting;
 
 let tmp;
 let apkPath;
@@ -50,6 +123,55 @@ describe('fileCustomId', () => {
 describe('buildAuthHeader', () => {
   it('produces base64 Basic header', () => {
     expect(buildAuthHeader('foo', 'bar')).toBe(`Basic ${Buffer.from('foo:bar').toString('base64')}`);
+  });
+});
+
+describe('readCredentials', () => {
+  afterEach(() => {
+    delete process.env.BROWSERSTACK_USERNAME;
+    delete process.env.BROWSERSTACK_ACCESS_KEY;
+  });
+
+  it('reads credentials from opts.credentials first', () => {
+    expect(readCredentials({ credentials: { userName: 'u1', accessKey: 'k1' } })).toEqual({
+      userName: 'u1',
+      accessKey: 'k1',
+    });
+  });
+
+  it('falls back to BROWSERSTACK_* env vars', () => {
+    process.env.BROWSERSTACK_USERNAME = 'envUser';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'envKey';
+    expect(readCredentials({})).toEqual({ userName: 'envUser', accessKey: 'envKey' });
+  });
+
+  it('throws bs_credentials_missing when no userName/accessKey is found anywhere', () => {
+    expect(() => readCredentials({})).toThrow();
+    try {
+      readCredentials({});
+    } catch (e) {
+      expect(e.code).toBe('bs_credentials_missing');
+    }
+  });
+
+  it('throws bs_credentials_missing when only accessKey is present', () => {
+    expect(() => readCredentials({ credentials: { accessKey: 'k' } })).toMatchObject;
+    try {
+      readCredentials({ credentials: { accessKey: 'k' } });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e.code).toBe('bs_credentials_missing');
+    }
+  });
+
+  it('throws bs_credentials_missing when the userName contains a colon', () => {
+    try {
+      readCredentials({ credentials: { userName: 'user:colon', accessKey: 'k' } });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e.code).toBe('bs_credentials_missing');
+      expect(e.message).toContain('colon');
+    }
   });
 });
 
@@ -199,6 +321,113 @@ describe('provisionApp — App Automate transport', () => {
     // Actually: per spec, no creds => local transport, return local path.
     const ref = await provisionApp(apkPath);
     expect(ref).toBe(apkPath);
+  });
+
+  it('treats a non-OK (non-404) recent_apps probe as a cache miss and uploads', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    // recent_apps returns 500 → probeRecentApps logs + returns undefined (miss),
+    // so provisionApp falls through to the upload.
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/recent_apps/')) {
+        return { ok: false, status: 500, text: async () => 'server error' };
+      }
+      return { ok: true, status: 200, json: async () => ({ app_url: 'bs://after-probe-500' }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(apkPath, { postUploadSettleMs: 0, skipDebugBuildCheck: true });
+    expect(ref).toBe('bs://after-probe-500');
+    expect(fetchMock).toHaveBeenCalledTimes(2); // probe (miss) + upload
+  });
+
+  it('treats a thrown/aborted recent_apps probe as a cache miss and uploads', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    // The probe fetch throws (e.g. network/abort) → caught, returns undefined.
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/recent_apps/')) {
+        throw new Error('network down');
+      }
+      return { ok: true, status: 200, json: async () => ({ app_url: 'bs://after-probe-throw' }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(apkPath, { postUploadSettleMs: 0, skipDebugBuildCheck: true });
+    expect(ref).toBe('bs://after-probe-throw');
+  });
+
+  it('ignores a non-array recent_apps body (older/edge response) as a miss', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/recent_apps/')) {
+        // 200 OK but JSON is an object, not an array → treated as miss.
+        return { ok: true, status: 200, json: async () => ({ message: 'no apps' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ app_url: 'bs://after-nonarray' }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(apkPath, { postUploadSettleMs: 0, skipDebugBuildCheck: true });
+    expect(ref).toBe('bs://after-nonarray');
+  });
+
+  it('throws bs_upload_failed when upload returns 200 with no app_url', async () => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/recent_apps/')) {
+        return { ok: false, status: 404, text: async () => '' };
+      }
+      // 200 OK but the body lacks app_url → the success-shape guard fires.
+      return { ok: true, status: 200, json: async () => ({ unexpected: 'shape' }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      provisionApp(apkPath, { postUploadSettleMs: 0, skipDebugBuildCheck: true, uploadRetries: 1 }),
+    ).rejects.toMatchObject({ code: 'bs_upload_failed' });
+  });
+});
+
+describe('provisionApp — debug-build detection (synthesized APK)', () => {
+  let tmp2;
+  beforeEach(() => {
+    process.env.BROWSERSTACK_USERNAME = 'u';
+    process.env.BROWSERSTACK_ACCESS_KEY = 'k';
+    tmp2 = mkdtempSync(join(tmpdir(), 'percy-provision-apk-'));
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await fs.rm(tmp2, { recursive: true, force: true });
+  });
+
+  it('rejects a synthesized DEBUG apk with build_is_debug_variant before any network call', async () => {
+    const debugApk = writeDebuggableApk(tmp2, 'app-debug.apk', true);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(
+      provisionApp(debugApk, { postUploadSettleMs: 0 }),
+    ).rejects.toMatchObject({ code: 'build_is_debug_variant' });
+    // The guard fires before the recent_apps probe / upload.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes the debug guard for a synthesized RELEASE apk (debuggable=false)', async () => {
+    const releaseApk = writeDebuggableApk(tmp2, 'app-release.apk', false);
+    const fetchMock = vi.fn(async () => ({
+      ok: true, status: 200, json: async () => [{ app_url: 'bs://release-cached' }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(releaseApk, { postUploadSettleMs: 0 });
+    expect(ref).toBe('bs://release-cached');
+  });
+
+  it('skips the debug guard entirely when skipDebugBuildCheck is true', async () => {
+    const debugApk = writeDebuggableApk(tmp2, 'app-debug.apk', true);
+    const fetchMock = vi.fn(async () => ({
+      ok: true, status: 200, json: async () => [{ app_url: 'bs://skipped-guard' }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const ref = await provisionApp(debugApk, { postUploadSettleMs: 0, skipDebugBuildCheck: true });
+    expect(ref).toBe('bs://skipped-guard');
   });
 });
 

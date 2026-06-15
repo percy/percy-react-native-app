@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, promises as fs, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import AdmZip from 'adm-zip';
 import { readApkDebuggable, __forTesting } from '../../percy/util/apkManifest.js';
 
 const { parseAxmlDebuggable, parseStringPool } = __forTesting;
@@ -417,6 +420,22 @@ describe('parseStringPool — direct unit tests', () => {
     expect(result[0]).toBe('');
   });
 
+  it('returns null when the root header size is out of range (rootHeaderSize > buf.length)', () => {
+    // Valid XML magic but a bogus root header size larger than the buffer →
+    // the `rootHeaderSize < 8 || rootHeaderSize > buf.length` guard fires.
+    const buf = Buffer.alloc(8);
+    buf.writeUInt16LE(0x0003, 0);   // type = XML
+    buf.writeUInt16LE(0xffff, 2);   // header size > buf.length
+    expect(parseAxmlDebuggable(buf)).toEqual({ debuggable: null, source: 'absent' });
+  });
+
+  it('returns null when the root header size is below the 8-byte minimum', () => {
+    const buf = Buffer.alloc(8);
+    buf.writeUInt16LE(0x0003, 0);
+    buf.writeUInt16LE(4, 2);        // header size < 8
+    expect(parseAxmlDebuggable(buf)).toEqual({ debuggable: null, source: 'absent' });
+  });
+
   it('decodes UTF-16 strings whose charLen uses the varint high-bit extension', () => {
     // Manually build a UTF-16 pool with one string using varint length
     // encoding (charLen high bit set, second u16 carries the low 16 bits).
@@ -450,5 +469,78 @@ describe('parseStringPool — direct unit tests', () => {
 
     const pool = Buffer.concat([header, indexArray, padded]);
     expect(parseStringPool(pool, 0, HEADER_SIZE)).toEqual(['hello']);
+  });
+});
+
+// ---- readApkDebuggable — synthesized .apk (real ZIP) fixtures ----
+//
+// readApkDebuggable extracts AndroidManifest.xml from a real ZIP (APKs are
+// ZIP archives) via adm-zip, then hands the bytes to parseAxmlDebuggable.
+// We build genuine .apk ZIPs on disk containing synthesized binary AXML
+// manifests — covering the adm-zip extraction path end-to-end without
+// shipping a binary APK fixture.
+
+/** Build an AXML buffer for an <application android:debuggable=<bool>> element. */
+function buildDebuggableManifest(debuggable) {
+  const strings = ['debuggable', 'application'];
+  const pool = buildStringPoolUtf8(strings);
+  const el = buildStartElement({
+    nameIdx: 1,
+    attrs: [{ nameIdx: 0, dataType: 0x12, data: debuggable ? 1 : 0 }],
+  });
+  return buildAxml(pool, [el]);
+}
+
+/** Write a real .apk (ZIP) to disk with the given AndroidManifest.xml bytes. */
+function writeApkZip(dir, name, manifestBuf) {
+  const zip = new AdmZip();
+  zip.addFile('AndroidManifest.xml', manifestBuf);
+  zip.addFile('classes.dex', Buffer.from('not-a-real-dex'));
+  const p = join(dir, name);
+  zip.writeZip(p);
+  return p;
+}
+
+describe('readApkDebuggable — synthesized .apk ZIP fixtures', () => {
+  let tmp;
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (tmp) await fs.rm(tmp, { recursive: true, force: true });
+    tmp = undefined;
+  });
+
+  it('reads android:debuggable=true from a synthesized debug APK ZIP', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'percy-apk-zip-'));
+    const apk = writeApkZip(tmp, 'app-debug.apk', buildDebuggableManifest(true));
+    const result = await readApkDebuggable(apk);
+    expect(result).toEqual({ debuggable: true, source: 'binary' });
+  });
+
+  it('reads android:debuggable=false from a synthesized release APK ZIP', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'percy-apk-zip-'));
+    const apk = writeApkZip(tmp, 'app-release.apk', buildDebuggableManifest(false));
+    const result = await readApkDebuggable(apk);
+    expect(result).toEqual({ debuggable: false, source: 'binary' });
+  });
+
+  it('returns null when the APK ZIP has no AndroidManifest.xml entry', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'percy-apk-zip-'));
+    const zip = new AdmZip();
+    zip.addFile('classes.dex', Buffer.from('only-a-dex'));
+    const apk = join(tmp, 'no-manifest.apk');
+    zip.writeZip(apk);
+    expect(await readApkDebuggable(apk)).toEqual({ debuggable: null, source: 'absent' });
+  });
+
+  it('returns null for an APK larger than the 1 GB cap (without reading it)', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'percy-apk-zip-'));
+    const apk = join(tmp, 'huge.apk');
+    writeFileSync(apk, 'header');
+    // Grow the file to just over 1 GB via a sparse truncate — this reports a
+    // >1 GB stat.size to readApkDebuggable's MAX_APK_SIZE_BYTES guard while
+    // consuming ~no real disk (the OS allocates a hole, not blocks).
+    await fs.truncate(apk, 1024 * 1024 * 1024 + 1);
+    expect(await readApkDebuggable(apk)).toEqual({ debuggable: null, source: 'absent' });
   });
 });

@@ -29,29 +29,28 @@ export default defineConfig({
         'coverage/**',
       ],
       thresholds: {
-        // Floor that reflects the suite as of the post-example-removal +
-        // coverage-fillers push (~225 tests). Two surfaces still drag the
-        // global numbers down significantly:
-        //   - percy/buildAndProvision.js (~213 lines uncovered, 34% stmts):
-        //     subprocess (gradle/expo/xcodebuild) invocation paths — covered
-        //     for argument shape + error fan-out; not unit-tested for actual
-        //     subprocess exec because that hits real toolchains during CI.
-        //     Validated end-to-end by the example repo's `npm run build`
-        //     pipeline.
-        //   - percy/navigator/uiTapStrategy.js (~245 lines uncovered, 34%
-        //     stmts / 8% funcs): demoted v9-only experimental path.
-        //     Validated empirically on the v9 sandbox but the deeply mocked
-        //     driver fixtures required for unit coverage would lock in
-        //     implementation details we still expect to churn.
-        // Together they account for ~450 of the global uncovered lines.
-        // Other modules are 92%+ (most at 100%).
+        // GREEN-FLOOR thresholds, set ~5 points below the locally-achieved
+        // coverage (~290 tests) so CI on Node 22/24 has headroom and stays
+        // green without flapping. Locally achieved (v8, Node 18 dev):
+        //   lines 99.66% | statements 99.66% | functions 100% | branches 94.47%
+        //
+        // The two previously-large gaps are now fully line-covered via
+        // mock-based behavioral tests (no source exclusions):
+        //   - percy/buildAndProvision.js → 100% (node:child_process spawn faked;
+        //     gradle/expo/xcodebuild paths driven via a queued fake-child).
+        //   - percy/navigator/uiTapStrategy.js → 100% lines (Appium driver
+        //     mocked + a deterministic virtual clock so the poll/stability/
+        //     timeout state machine runs instantly and predictably).
+        // Remaining uncovered lines are defensive/dead branches only
+        // (apkManifest.js 59-60 unreachable catch; storyParser.js 134-141
+        // export-const collection gated unreachable by an upstream `continue`).
         //
         // Raise these alongside new tests; do NOT lower without a comment
         // justifying why coverage is going backwards.
-        lines: 80,
-        functions: 85,
-        statements: 80,
-        branches: 85,
+        lines: 94,
+        functions: 95,
+        statements: 94,
+        branches: 89,
       },
     },
   },

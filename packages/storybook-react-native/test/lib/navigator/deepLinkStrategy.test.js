@@ -143,4 +143,46 @@ describe('deepLinkNavigate — iOS branch (item 2.2)', () => {
       deepLinkNavigate(appium, { id: 'x' }, { appScheme: 'myapp' /* no appPackage */ }),
     ).rejects.toMatchObject({ code: 'invalid_descriptor' });
   });
+
+  it('falls back to mobile: deepLink on iOS 16.4+ when driver.url is unavailable', async () => {
+    // iOS 16.4+ (supportsDeepLink true) but the wdio driver exposes no url()
+    // method → the else-branch issues `mobile: deepLink` via executeScript.
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'iOS', 'appium:platformVersion': '17.0' },
+    });
+    delete wdioDriver.url; // no url() on this driver build
+    const execSpy = vi.fn(async () => {});
+    const appium = {
+      driver: wdioDriver,
+      executeScript: execSpy,
+      pause: vi.fn(async () => {}),
+    };
+    await expect(
+      deepLinkNavigate(appium, { id: 'forms-button--primary' }, { appScheme: 'myapp' }),
+    ).resolves.toBeDefined();
+    expect(execSpy).toHaveBeenCalledWith('mobile: deepLink', {
+      url: 'myapp:///?STORYBOOK_STORY_ID=forms-button--primary',
+    });
+  });
+
+  it('rejects with deep_link_unsupported_platform when driver.url() never settles (timeout)', async () => {
+    // driver.url() hangs forever → withTimeout's timer fires and rejects with
+    // deep_link_unsupported_platform. A tiny deepLinkTimeoutMs keeps it instant.
+    const wdioDriver = createMockDriver({
+      capabilities: { platformName: 'iOS', 'appium:platformVersion': '17.0' },
+    });
+    wdioDriver.url = vi.fn(() => new Promise(() => {})); // never resolves
+    const appium = {
+      driver: wdioDriver,
+      executeScript: vi.fn(),
+      pause: vi.fn(async () => {}),
+    };
+    await expect(
+      deepLinkNavigate(
+        appium,
+        { id: 'x' },
+        { appScheme: 'myapp', deepLinkTimeoutMs: 10 },
+      ),
+    ).rejects.toMatchObject({ code: 'deep_link_unsupported_platform' });
+  });
 });

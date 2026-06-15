@@ -327,4 +327,10 @@ export function useAppReference(ref) {
 export const __forTesting = {
   fileCustomId,
   buildAuthHeader: basicAuthHeader,
+  // Exposed for unit coverage of the credential-shape guards. `provisionApp`
+  // pre-checks credential presence with identical logic, so the missing-creds
+  // and colon-in-userName branches inside readCredentials are unreachable
+  // through the public path — testing the helper directly keeps the guards
+  // covered without behavior-altering seams in the call site.
+  readCredentials,
 };
