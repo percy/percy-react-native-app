@@ -99,6 +99,16 @@ export async function run(opts) {
       }
     }
 
+    // Resilient to per-story failures, but a run where nothing was captured
+    // is a hard failure — surface it (non-zero exit) so CI doesn't go green.
+    if (captured === 0 && failed > 0) {
+      throw err(
+        'all_snapshots_failed',
+        `All ${total} story snapshot(s) failed to capture.`,
+        'Check the per-story errors above; re-run with DEBUG=1 for details.',
+      );
+    }
+
     log(`[percy] Done. Captured ${captured}/${total} snapshot(s)${failed ? `, ${failed} failed.` : '.'}`);
   } finally {
     await appium.disconnect();
