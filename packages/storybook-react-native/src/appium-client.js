@@ -78,6 +78,20 @@ export class AppiumClient {
     return deviceName ? `${platformName}-${deviceName}` : platformName;
   }
 
+  /**
+   * Normalized OS name for the Percy comparison tag ('iOS' | 'Android').
+   * Falls back to 'iOS' when the platform can't be determined, preserving
+   * prior behavior rather than emitting an empty osName.
+   * @returns {string}
+   */
+  getPlatformName() {
+    const caps = this.driver?.capabilities ?? {};
+    const platformName = String(caps.platformName ?? caps['appium:platformName'] ?? '').toLowerCase();
+    if (platformName.includes('android')) return 'Android';
+    if (platformName.includes('ios')) return 'iOS';
+    return 'iOS';
+  }
+
   async disconnect() {
     if (this.driver) {
       try {

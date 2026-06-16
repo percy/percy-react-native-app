@@ -14,13 +14,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/percy/percy-react-native-support.git",
+    "url": "git+https://github.com/percy/percy-react-native-app.git",
     "directory": "packages/storybook-react-native"
   },
   "bugs": {
-    "url": "https://github.com/percy/percy-react-native-support/issues"
+    "url": "https://github.com/percy/percy-react-native-app/issues"
   },
-  "homepage": "https://github.com/percy/percy-react-native-support/tree/main/packages/storybook-react-native#readme",
+  "homepage": "https://github.com/percy/percy-react-native-app/tree/main/packages/storybook-react-native#readme",
   "publishConfig": {
     "access": "public",
     "tag": "latest"

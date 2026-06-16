@@ -60,6 +60,7 @@ export async function run(opts) {
     log(`[percy] Connecting to Appium @ ${config.appium.server}...`);
     await appium.connect();
     const deviceLabel = appium.getDeviceLabel();
+    const osName = appium.getPlatformName();
     log(`[percy] Appium session ready (device: ${deviceLabel}).`);
 
     log(`[percy] Verifying Storybook channel @ ${channel.baseUrl()}...`);
@@ -67,28 +68,38 @@ export async function run(opts) {
     log(`[percy] Channel reachable.`);
 
     let captured = 0;
+    let failed = 0;
+    let index = 0;
     const total = filtered.length;
     for (const story of filtered) {
-      log(`[percy] [${++captured}/${total}] ${story.id} on ${deviceLabel}`);
+      log(`[percy] [${++index}/${total}] ${story.id} on ${deviceLabel}`);
 
+      // A failure on a single story must not abort the remaining captures.
       try {
-        await channel.selectAndAwaitRender(story.id, config.storybook.waitForReadyMs);
+        try {
+          await channel.selectAndAwaitRender(story.id, config.storybook.waitForReadyMs);
+        } catch (e) {
+          log(`[percy] ⚠ Could not confirm render for "${story.id}" — capturing anyway. (${e instanceof Error ? e.message : e})`);
+        }
+
+        // Small settle delay for animations / image decoding after render commit.
+        await sleep(250);
+
+        const screenshotBase64 = await appium.takeScreenshot();
+        await postSnapshotComparison({
+          name: `${story.componentTitle}/${story.name}/${deviceLabel}`,
+          tag: deviceLabel,
+          osName,
+          screenshotBase64,
+        });
+        captured++;
       } catch (e) {
-        log(`[percy] ⚠ Could not confirm render for "${story.id}" — capturing anyway. (${e instanceof Error ? e.message : e})`);
+        failed++;
+        log(`[percy] ✖ Failed to capture "${story.id}" — skipping. (${e instanceof Error ? e.message : e})`);
       }
-
-      // Small settle delay for animations / image decoding after render commit.
-      await sleep(250);
-
-      const screenshotBase64 = await appium.takeScreenshot();
-      await postSnapshotComparison({
-        name: `${story.componentTitle}/${story.name}/${deviceLabel}`,
-        tag: deviceLabel,
-        screenshotBase64,
-      });
     }
 
-    log(`[percy] Done. Captured ${captured} snapshot(s).`);
+    log(`[percy] Done. Captured ${captured}/${total} snapshot(s)${failed ? `, ${failed} failed.` : '.'}`);
   } finally {
     await appium.disconnect();
   }

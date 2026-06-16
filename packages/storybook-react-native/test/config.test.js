@@ -39,4 +39,29 @@ describe('mergeConfig', () => {
     });
     expect(result.storybook.waitForReadyMs).toBe(2500);
   });
+
+  it('rejects a non-http appium.server URL', () => {
+    expect(() => mergeConfig({ appium: { server: 'ftp://nope', capabilities: {} } }))
+      .toThrow(/appium\.server must be an http/);
+  });
+
+  it('rejects a websocketHost that is not a bare hostname', () => {
+    expect(() =>
+      mergeConfig({ storybook: { websocketHost: 'evil.com/x#', websocketPort: 7007, waitForReadyMs: 1000 } }),
+    ).toThrow(/websocketHost must be a bare hostname/);
+  });
+
+  it('rejects an out-of-range websocketPort', () => {
+    expect(() =>
+      mergeConfig({ storybook: { websocketHost: 'localhost', websocketPort: 70000, waitForReadyMs: 1000 } }),
+    ).toThrow(/websocketPort must be an integer/);
+  });
+
+  it('accepts a valid IPv4 host and custom port', () => {
+    const result = mergeConfig({
+      storybook: { websocketHost: '127.0.0.1', websocketPort: 19006, waitForReadyMs: 1000 },
+    });
+    expect(result.storybook.websocketHost).toBe('127.0.0.1');
+    expect(result.storybook.websocketPort).toBe(19006);
+  });
 });

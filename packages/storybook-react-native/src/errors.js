@@ -10,6 +10,7 @@
  *   | 'story_render_timeout'
  *   | 'screenshot_failed'
  *   | 'include_zero_match'
+ *   | 'invalid_config'
  *   | 'invalid_descriptor'
  *   | 'invalid_app_reference'
  *   | 'bs_credentials_missing'

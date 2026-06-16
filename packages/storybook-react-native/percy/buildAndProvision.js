@@ -219,6 +219,16 @@ async function buildIosSimulator(projectPath, projectType, timeoutMs) {
     );
   }
   const schemeName = (workspace ?? project).replace(/\.(xcworkspace|xcodeproj)$/, '');
+  // The scheme name comes from a filesystem entry name and is passed as a bare
+  // xcodebuild argument. Reject a leading dash or shell/option metacharacters so
+  // a maliciously- or oddly-named project dir can't inject xcodebuild options.
+  if (/^-/.test(schemeName) || !/^[A-Za-z0-9._ -]+$/.test(schemeName)) {
+    throw err(
+      'build_failed',
+      `Refusing to build: derived Xcode scheme name "${schemeName}" contains unsafe characters.`,
+      'Rename the .xcworkspace/.xcodeproj so its name is alphanumeric and does not start with "-".',
+    );
+  }
 
   const buildDir = path.join(iosDir, 'build');
   const xcodebuildArgs = [
@@ -303,16 +313,19 @@ function runCommand(cmd, args, opts) {
       );
     });
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       clearTimeout(timer);
       if (code === 0) {
         resolve();
         return;
       }
+      // A process killed by a signal reports code === null; surface the signal
+      // instead of an unhelpful "exited with code null".
+      const how = code === null ? `was killed by signal ${signal}` : `exited with code ${code}`;
       reject(
         err(
           'build_failed',
-          `Build command \`${cmd} ${args.join(' ')}\` exited with code ${code}.`,
+          `Build command \`${cmd} ${args.join(' ')}\` ${how}.`,
           'See the gradle/xcodebuild output above. Common causes: missing JDK, ANDROID_HOME unset, Xcode license unagreed.',
           new Error(stderrBuf.slice(-500)),
         ),

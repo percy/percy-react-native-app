@@ -154,6 +154,15 @@ async function walkGlob(root, glob) {
 }
 
 /**
+ * Directories that never contain `.stories` sources but can be huge — skip
+ * them so enumeration doesn't walk an entire native-build / VCS / cache tree.
+ */
+const IGNORED_WALK_DIRS = new Set([
+  'node_modules', '.git', '.hg', '.svn',
+  '.expo', '.next', 'build', 'dist', 'Pods', 'DerivedData',
+]);
+
+/**
  * Recursively list every file under root.
  * @param {string} root
  * @returns {Promise<string[]>}
@@ -167,7 +176,7 @@ async function walkDir(root) {
     for (const ent of entries) {
       const full = path.join(dir, ent.name);
       if (ent.isDirectory()) {
-        if (ent.name === 'node_modules') continue;
+        if (IGNORED_WALK_DIRS.has(ent.name)) continue;
         await recurse(full);
       } else if (ent.isFile()) {
         out.push(full);

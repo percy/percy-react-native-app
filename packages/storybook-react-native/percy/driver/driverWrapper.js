@@ -61,7 +61,11 @@ export class AppiumDriver {
    * @param {object | object[]} args
    */
   async executeScript(script, args) {
-    return this.driver.executeScript(script, Array.isArray(args) ? args : [args]);
+    // WDIO's executeScript takes (script, argsArray). Normalize: an array is
+    // passed through; a single value is wrapped; undefined becomes [] (rather
+    // than [undefined], which would forward a literal undefined arg).
+    const wrapped = args === undefined ? [] : Array.isArray(args) ? args : [args];
+    return this.driver.executeScript(script, wrapped);
   }
 
   /**
