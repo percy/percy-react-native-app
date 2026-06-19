@@ -28,15 +28,24 @@ const TERMINAL_UPLOAD_CODES = new Set([
 ]);
 
 /**
- * Strip anything that looks like a BrowserStack access key from a response
- * body before logging it. Access keys are 20-char alphanumerics; surrounding
- * them with non-word chars lets us catch them embedded in JSON error blobs
- * without false-positive-truncating regular content.
+ * Strip credentials from a response body before logging it. We redact the
+ * exact known secrets first (the access key / userName we hold in scope —
+ * this catches keys that contain hyphens or are shorter than the heuristic
+ * threshold), then fall back to the 20-char-alphanumeric heuristic for any
+ * key echoed in a shape we didn't anticipate. Finally truncate to 200 chars.
  *
  * @param {string} body
+ * @param {string[]} [secrets]  exact literal values to redact (e.g. accessKey)
  */
-function scrubSecrets(body) {
-  return body
+function scrubSecrets(body, secrets = []) {
+  let scrubbed = body;
+  for (const s of secrets) {
+    // Only redact non-trivial values — a 1-char "secret" would nuke the body.
+    if (typeof s === 'string' && s.length >= 4) {
+      scrubbed = scrubbed.split(s).join('[redacted]');
+    }
+  }
+  return scrubbed
     .replace(/[A-Za-z0-9]{20,}/g, '[redacted]')
     .slice(0, 200);
 }
@@ -146,8 +155,9 @@ async function probeRecentApps(authHeader, customId, timeoutMs) {
  * @param {string} filename       basename for the multipart part
  * @param {string} customId
  * @param {{ retries: number, timeoutMs: number }} retryOpts
+ * @param {string[]} [secrets]  exact credential values to redact from logged bodies
  */
-async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) {
+async function uploadWithRetry(authHeader, data, filename, customId, retryOpts, secrets = []) {
   // Single Blob backed by the existing Buffer — retries reuse the underlying
   // bytes through fresh FormData wrappers below.
   const fileBlob = new Blob([data]);
@@ -172,7 +182,7 @@ async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) 
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_too_large',
-          `BrowserStack rejected the upload (413). ${scrubSecrets(body)}`,
+          `BrowserStack rejected the upload (413). ${scrubSecrets(body, secrets)}`,
           'Reduce app size or contact BrowserStack support to raise the per-account limit.',
         );
       }
@@ -180,20 +190,20 @@ async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) 
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_failed',
-          `BrowserStack upload failed with HTTP ${res.status}: ${scrubSecrets(body)}`,
+          `BrowserStack upload failed with HTTP ${res.status}: ${scrubSecrets(body, secrets)}`,
           'Verify BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY and try again.',
         );
       }
       if (!res.ok) {
         // 5xx — retry
         const body = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${scrubSecrets(body)}`);
+        throw new Error(`HTTP ${res.status}: ${scrubSecrets(body, secrets)}`);
       }
       const json = /** @type {{ app_url?: string }} */ (await res.json());
       if (!json.app_url) {
         throw err(
           'bs_upload_failed',
-          `BrowserStack returned 200 but no app_url in response: ${scrubSecrets(JSON.stringify(json))}`,
+          `BrowserStack returned 200 but no app_url in response: ${scrubSecrets(JSON.stringify(json), secrets)}`,
         );
       }
       return json.app_url;
@@ -302,7 +312,7 @@ export async function provisionApp(localPath, opts = {}) {
   const appUrl = await uploadWithRetry(auth, data, basename(localPath), customId, {
     retries: merged.uploadRetries,
     timeoutMs: merged.uploadTimeoutMs,
-  });
+  }, [k, u]);
 
   // Defensive settle — Phase 1 PoC will measure whether this is needed.
   if (merged.postUploadSettleMs > 0) {
@@ -327,4 +337,5 @@ export function useAppReference(ref) {
 export const __forTesting = {
   fileCustomId,
   buildAuthHeader: basicAuthHeader,
+  scrubSecrets,
 };

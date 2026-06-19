@@ -30,7 +30,7 @@ export default defineConfig({
       ],
       thresholds: {
         // Floor that reflects the suite as of the post-example-removal +
-        // coverage-fillers push (~225 tests). Two surfaces still drag the
+        // coverage-fillers push (~238 tests). Two surfaces still drag the
         // global numbers down significantly:
         //   - percy/buildAndProvision.js (~213 lines uncovered, 34% stmts):
         //     subprocess (gradle/expo/xcodebuild) invocation paths — covered

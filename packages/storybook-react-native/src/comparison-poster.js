@@ -5,6 +5,7 @@ import { err } from './errors.js';
  * @typedef {Object} ComparisonInput
  * @property {string} name        Snapshot name, e.g. "Button/Primary/iOS-iPhone-15"
  * @property {string} tag         Device label, used for grouping (e.g. "iOS-iPhone-15")
+ * @property {string} [osName]    OS name for the tag ('iOS' | 'Android'); defaults to 'iOS'
  * @property {string} screenshotBase64
  *
  * Wraps `@percy/sdk-utils` `postComparison`, which POSTs to the Percy CLI
@@ -69,7 +70,7 @@ export async function postSnapshotComparison(input) {
     name: input.name,
     tag: {
       name: input.tag,
-      osName: 'iOS',
+      osName: input.osName ?? 'iOS',
       width,
       height,
     },

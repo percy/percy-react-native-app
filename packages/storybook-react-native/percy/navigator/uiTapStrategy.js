@@ -69,6 +69,7 @@ function getState(driver) {
   let s = perDriver.get(driver);
   if (!s) {
     s = {
+      warmedUp: false,
       drawerOpen: false,
       expandedComponents: new Set(),
       currentStoryId: null,
@@ -81,11 +82,19 @@ function getState(driver) {
 }
 
 /**
- * Drop cached navigator state for this driver — used after a divergence
- * detection or when the customer wants to force a fresh navigation.
+ * Reset navigation *position* (drawer + expanded path) after a divergence or
+ * forced replay. Session-level state — `warmedUp`, `consecutiveDivergences`,
+ * and `cacheDisabledForSession` — is deliberately preserved: a diverged cache
+ * must not re-trigger the cold-boot poll, and must not reset the divergence
+ * counter that eventually disables caching (a full WeakMap delete here would
+ * wipe both, so the "disable cache after 2 divergences" safeguard never fired).
  */
 function resetState(driver) {
-  perDriver.delete(driver);
+  const s = perDriver.get(driver);
+  if (!s) return;
+  s.drawerOpen = false;
+  s.expandedComponents.clear();
+  s.currentStoryId = null;
 }
 
 /**
@@ -246,12 +255,7 @@ async function awaitRenderReady(appiumDriver, descriptor, opts) {
     if (el) return tierDurations;
   }
   if (elapsed() >= opts.globalNavigationBudgetMs) {
-    throw err(
-      'nav_render_timeout',
-      `Story ${descriptor.id} did not become ready within ${opts.globalNavigationBudgetMs}ms.`,
-      'Increase globalNavigationBudgetMs, or check the device for a hung animation / modal.',
-      tierDurations,
-    );
+    throw renderTimeout(descriptor, opts, tierDurations);
   }
 
   // Tier 2 — bounded screenshot stability with a settle delay.
@@ -287,14 +291,25 @@ async function awaitRenderReady(appiumDriver, descriptor, opts) {
   }
 
   if (elapsed() >= opts.globalNavigationBudgetMs) {
-    throw err(
-      'nav_render_timeout',
-      `Story ${descriptor.id} did not become ready within ${opts.globalNavigationBudgetMs}ms.`,
-      'Increase globalNavigationBudgetMs, or check the device for a hung animation / modal.',
-      tierDurations,
-    );
+    throw renderTimeout(descriptor, opts, tierDurations);
   }
   return tierDurations;
+}
+
+/**
+ * Build the nav_render_timeout error. Per-tier durations are attached on a
+ * dedicated `tierDurations` property (NOT passed as the Error `cause`, which
+ * must be reserved for an underlying Error) so telemetry consumers can read
+ * them without colliding with cause-chaining.
+ */
+function renderTimeout(descriptor, opts, tierDurations) {
+  const e = err(
+    'nav_render_timeout',
+    `Story ${descriptor.id} did not become ready within ${opts.globalNavigationBudgetMs}ms.`,
+    'Increase globalNavigationBudgetMs, or check the device for a hung animation / modal.',
+  );
+  e.tierDurations = tierDurations;
+  return e;
 }
 
 /**
@@ -369,4 +384,6 @@ export async function uiTapNavigate(appiumDriver, descriptor, opts) {
 export const __forTesting = {
   cheapImageHash,
   DEFAULTS,
+  getState,
+  resetState,
 };

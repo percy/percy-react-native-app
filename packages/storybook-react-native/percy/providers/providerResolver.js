@@ -3,9 +3,11 @@ import { AppAutomateProvider } from './appAutomateProvider.js';
 
 /**
  * ProviderResolver — picks the provider whose static supports() returns
- * true. Direct port of @percy/percy-appium-js's percy/providers/providerResolver.js
- * pattern (verified upstream — first non-falsy supports wins; GenericProvider
- * is the catch-all and must be last in the list).
+ * true. Follows @percy/percy-appium-js's providerResolver pattern (first
+ * non-falsy supports() wins; GenericProvider is the catch-all and must be
+ * last in the list). Selection signal differs from the reference: it inspects
+ * BrowserStack credentials in capabilities rather than the driver's
+ * remoteHostname (see AppAutomateProvider.supports).
  *
  * Re-resolved on every call (cheap — capability reads). Avoids stale
  * cached state across `driver.deleteSession() → new remote()` reuse.

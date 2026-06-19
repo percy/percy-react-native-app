@@ -17,21 +17,26 @@ export class IosMetadata extends Metadata {
   }
 
   /**
-   * Parse `platformVersion` once. Memoized per call site via the local var
-   * pattern — version is a read-only Appium capability, so callers within a
-   * single session will see identical inputs.
+   * Parse `platformVersion` into { major, minor }, memoized on the instance.
+   * platformVersion is a read-only Appium capability, so the parse is stable
+   * for the lifetime of this metadata object.
    *
    * @returns {{ major: number | null, minor: number }}
    */
   _parsedVersion() {
+    if (this.__parsedVersion) return this.__parsedVersion;
     const raw = this.platformVersion();
-    if (!raw) return { major: null, minor: 0 };
-    const m = String(raw).match(/^(\d+)(?:\.(\d+))?/);
-    if (!m) return { major: null, minor: 0 };
-    return {
-      major: Number(m[1]),
-      minor: m[2] !== undefined ? Number(m[2]) : 0,
-    };
+    let parsed;
+    if (!raw) {
+      parsed = { major: null, minor: 0 };
+    } else {
+      const m = String(raw).match(/^(\d+)(?:\.(\d+))?/);
+      parsed = m
+        ? { major: Number(m[1]), minor: m[2] !== undefined ? Number(m[2]) : 0 }
+        : { major: null, minor: 0 };
+    }
+    this.__parsedVersion = parsed;
+    return parsed;
   }
 
   /**
