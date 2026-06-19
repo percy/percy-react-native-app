@@ -70,7 +70,7 @@
   },
   "devDependencies": {
     "@percy/appium-app": "~2.1.0",
-    "@percy/cli": "^1.31.12",
+    "@percy/cli": "^1.32.2",
     "@vitest/coverage-v8": "^2.0.0",
     "appium": "^2.19.0",
     "appium-xcuitest-driver": "^8.4.3",
