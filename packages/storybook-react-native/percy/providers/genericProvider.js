@@ -4,14 +4,19 @@ import { MetadataResolver } from '../metadata/metadataResolver.js';
 /**
  * GenericProvider — local-Appium / catch-all path.
  *
- * Mirrors @percy/percy-appium-js's GenericProvider as the always-supported
- * fallback. AppAutomateProvider extends this and overrides only the
- * BrowserStack-specific behaviors (session URL surfacing, cap shaping).
+ * Follows the App Percy (percy-appium-js) provider *shape* as the always-
+ * supported fallback, but NOT its capture pipeline. Unlike the reference's
+ * GenericProvider, this class has no `screenshot()`/`getTiles()`/`getTag()`/
+ * `findRegions()`/`postComparison`: the actual screenshot, tile assembly,
+ * device-geometry metadata, region resolution, and comparison upload are
+ * delegated to the `@percy/appium-app` peer dependency (invoked from
+ * percyStorybookSnapshot.js). This provider only:
+ *  - Wraps the customer's driver (transport identity)
+ *  - Resolves per-platform metadata used for snapshot *naming* / version gating
+ *  - Surfaces transport-specific helpers (none in the generic case)
  *
- * The provider is responsible for:
- *  - Wrapping the customer's driver
- *  - Resolving per-platform metadata
- *  - Surfacing transport-specific helpers (none in the generic case)
+ * AppAutomateProvider extends this and overrides only the BrowserStack-specific
+ * behaviors (session-URL surfacing, credential-based dispatch).
  */
 export class GenericProvider {
   /**

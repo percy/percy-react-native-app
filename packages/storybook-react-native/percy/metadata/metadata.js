@@ -1,12 +1,12 @@
 /**
  * Base metadata extractor. Encapsulates Appium capability shape reads
- * with the WebdriverIO 8 vs 9 cap-prefix gotcha handled in one place
- * (the parent's appium-client.js:75 demonstrates the pattern — cap keys
- * sometimes have the `appium:` prefix and sometimes don't, depending on
- * WDIO version + whether the cap was set pre- or post-session-create).
+ * with the WebdriverIO 8 vs 9 cap-prefix gotcha handled in one place: cap
+ * keys sometimes have the `appium:` prefix and sometimes don't, depending on
+ * WDIO version + whether the cap was set pre- or post-session-create (see
+ * `_readCap`, which reads both forms).
  *
  * Per-platform subclasses (androidMetadata, iosMetadata) extend this for
- * platform-specific reads (status bar height, etc).
+ * platform-specific reads (bundle/package ids, version gating, etc).
  */
 export class Metadata {
   /**
@@ -33,9 +33,9 @@ export class Metadata {
   }
 
   /**
-   * Snapshot device label used for naming — same shape PER-7859's CLI
-   * mode produces (`{platformName}-{deviceName}`), so library mode and
-   * CLI mode emit identical baselines.
+   * Snapshot device label used for naming (`{platformName}-{deviceName}`).
+   * Library mode and CLI mode use the same shape so they emit identical
+   * baselines for the same device.
    * @returns {string}
    */
   deviceLabel() {

@@ -1,5 +1,11 @@
+import { createRequire } from 'module';
 import * as utils from '@percy/sdk-utils';
 import { log } from './log.js';
+
+const require = createRequire(import.meta.url);
+const sdkPkg = require('../../package.json');
+// e.g. "@percy/storybook-react-native/0.2.0" — used by the CLI for SDK attribution.
+const CLIENT_INFO = `${sdkPkg.name}/${sdkPkg.version}`;
 
 /**
  * Best-effort telemetry for SDK-internal failures. Mirrors
@@ -11,7 +17,8 @@ import { log } from './log.js';
  */
 export async function postFailedEvent(ev) {
   try {
-    await utils.postBuildEvent({
+    await utils.postBuildEvents({
+      clientInfo: ev.clientInfo ?? CLIENT_INFO,
       message: ev.message,
       errorKind: ev.kind ?? 'sdk_error',
       errorCode: ev.errorCode,

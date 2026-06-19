@@ -1,3 +1,5 @@
+import { err } from './errors.js';
+
 /**
  * `.percy.yml` schema under the `storybook-rn:` key.
  * Resolved + defaulted via `mergeConfig()`.
@@ -31,7 +33,7 @@ export const DEFAULT_CONFIG = {
  */
 export function mergeConfig(partial) {
   if (!partial) return DEFAULT_CONFIG;
-  return {
+  const merged = {
     appium: {
       ...DEFAULT_CONFIG.appium,
       ...partial.appium,
@@ -47,6 +49,54 @@ export function mergeConfig(partial) {
     include: partial.include ?? DEFAULT_CONFIG.include,
     skip: partial.skip ?? DEFAULT_CONFIG.skip,
   };
+  assertValidConfig(merged);
+  return merged;
+}
+
+/**
+ * Validate the externally-supplied connection settings before they get
+ * templated into request URLs (the Appium server URL and the Storybook
+ * channel `http://host:port/...`). These come from `.percy.yml`, so a
+ * malformed value should fail fast with a clear message rather than produce
+ * a corrupt URL.
+ *
+ * @param {StorybookRNConfig} cfg
+ */
+function assertValidConfig(cfg) {
+  let serverOk = false;
+  try {
+    const u = new URL(cfg.appium.server);
+    serverOk = u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    serverOk = false;
+  }
+  if (!serverOk) {
+    throw err(
+      'invalid_config',
+      `storybook-rn.appium.server must be an http(s) URL, got "${cfg.appium.server}".`,
+      'Set it to e.g. http://localhost:4723.',
+    );
+  }
+
+  const host = cfg.storybook.websocketHost;
+  // Bare hostname or IPv4 only — no scheme, port, path, or credentials, so it
+  // can't break out of the `http://${host}:${port}` template.
+  if (typeof host !== 'string' || !/^[A-Za-z0-9.-]+$/.test(host)) {
+    throw err(
+      'invalid_config',
+      `storybook-rn.storybook.websocketHost must be a bare hostname or IP, got "${host}".`,
+      'Use e.g. "localhost" or "127.0.0.1" — no scheme, port, or path.',
+    );
+  }
+
+  const port = cfg.storybook.websocketPort;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw err(
+      'invalid_config',
+      `storybook-rn.storybook.websocketPort must be an integer 1–65535, got ${port}.`,
+      'Set it to your Storybook channel port (default 7007).',
+    );
+  }
 }
 
 /**

@@ -49,6 +49,28 @@ describe('postSnapshotComparison', () => {
     expect(payload.tiles[0].fullscreen).toBe(false);
   });
 
+  it('uses the provided osName on the tag (Android)', async () => {
+    const png = makePng(1080, 2400);
+    await postSnapshotComparison({
+      name: 'Button/Primary/Android-Pixel-7',
+      tag: 'Android-Pixel-7',
+      osName: 'Android',
+      screenshotBase64: png.toString('base64'),
+    });
+    const payload = utils.postComparison.mock.calls[0][0];
+    expect(payload.tag.osName).toBe('Android');
+  });
+
+  it('defaults osName to iOS when not provided', async () => {
+    const png = makePng(390, 844);
+    await postSnapshotComparison({
+      name: 'X',
+      tag: 'iOS-iPhone-15',
+      screenshotBase64: png.toString('base64'),
+    });
+    expect(utils.postComparison.mock.calls[0][0].tag.osName).toBe('iOS');
+  });
+
   it('throws when buffer is not a PNG', async () => {
     const notPng = Buffer.from('not a png at all just text padding to be long enough', 'utf8');
     await expect(
