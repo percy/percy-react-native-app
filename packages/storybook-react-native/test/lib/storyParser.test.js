@@ -172,4 +172,58 @@ describe('parseStoriesAst — AST-based CSF parsing (item 2.1)', () => {
     `;
     expect(parseStoriesAst(src)).toEqual([]);
   });
+
+  it('resolves title from an INLINE object-expression spread (not via a const)', () => {
+    // The spread argument is an ObjectExpression literal inline in the default
+    // export — exercises resolveStringProperty's `prop.argument.type ===
+    // 'ObjectExpression'` recursion branch (distinct from the const-Identifier
+    // spread covered above).
+    const src = `
+      export default { ...{ title: 'Inline/Spread', tags: ['x'] }, component: Foo };
+      export const Primary = {};
+    `;
+    const result = parseStoriesAst(src);
+    expect(result).toHaveLength(1);
+    expect(result[0].componentTitle).toBe('Inline/Spread');
+    expect(result[0].name).toBe('Primary');
+  });
+
+  it('resolves a string-literal property key for the title ("title": ...)', () => {
+    // `'title':` is a StringLiteral key, not an Identifier — exercises the
+    // StringLiteral branch of propertyKey().
+    const src = `
+      export default { 'title': 'Quoted/Key', component: Foo };
+      export const Default = {};
+    `;
+    const result = parseStoriesAst(src);
+    expect(result).toHaveLength(1);
+    expect(result[0].componentTitle).toBe('Quoted/Key');
+  });
+
+  it('ignores numeric-literal property keys when resolving title (propertyKey → null)', () => {
+    // A numeric-literal key (`42:`) is neither Identifier nor StringLiteral, so
+    // propertyKey() returns null. The parser must skip it without throwing while
+    // the real string `title` still resolves.
+    const src = `
+      export default { 42: 'ignored', title: 'Numeric/Skip', component: Foo };
+      export const Default = {};
+    `;
+    const result = parseStoriesAst(src);
+    expect(result).toHaveLength(1);
+    expect(result[0].componentTitle).toBe('Numeric/Skip');
+  });
+
+  it('still enumerates stories when @babel/parser uses errorRecovery (ast.errors populated)', () => {
+    // A trailing stray token that @babel/parser's errorRecovery tolerates →
+    // ast.errors is populated (hits the debug-warn branch) but a usable partial
+    // AST is still produced, so the valid default export + story are enumerated.
+    const src = `
+      export default { title: 'Recovered/Meta', component: Foo };
+      export const Default = { args: {} };
+      return 5;
+    `;
+    const result = parseStoriesAst(src);
+    // Must not throw; the recovered AST still surfaces the story.
+    expect(result.some((s) => s.componentTitle === 'Recovered/Meta')).toBe(true);
+  });
 });

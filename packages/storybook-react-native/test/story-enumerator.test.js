@@ -186,4 +186,52 @@ describe('enumerateStories', () => {
     const stories = await enumerateStories(tmp);
     expect(stories.map((s) => s.id)).toEqual(['x--y']);
   });
+
+  it('throws no_stories_found when .stories files exist but export no named stories', async () => {
+    // The file matches the glob (so the "no files matched" guard passes) and has
+    // a valid default-export title, but defines ZERO named story exports → the
+    // descriptors array ends up empty and the no-exported-stories guard fires.
+    const rb = path.join(tmp, '.rnstorybook');
+    const storiesDir = path.join(rb, 'stories');
+    await fs.mkdir(storiesDir, { recursive: true });
+    await fs.writeFile(
+      path.join(rb, 'main.ts'),
+      `const main = { stories: ['./stories/**/*.stories.tsx'] }; export default main;`,
+    );
+    await fs.writeFile(
+      path.join(storiesDir, 'TitleOnly.stories.tsx'),
+      // default title present, but no `export const <Story>` declarations.
+      `export default { title: 'Empty/TitleOnly' };`,
+    );
+    await expect(enumerateStories(tmp)).rejects.toThrow(/no exported stories within them/);
+  });
+
+  it('matches `**` against deep paths while skipping siblings the suffix excludes', async () => {
+    // Glob with a `**` segment followed by a required `deep/` segment. The
+    // top-level X file forces matchSegList's `**` loop to exhaust every split
+    // position and return false (no `deep/` ancestor), while the nested Y file
+    // under deep/ matches — exercising both the success and the false-return
+    // branches of the `**` matcher.
+    const rb = path.join(tmp, '.rnstorybook');
+    const storiesDir = path.join(rb, 'stories');
+    const deepDir = path.join(storiesDir, 'a', 'deep');
+    await fs.mkdir(deepDir, { recursive: true });
+    await fs.writeFile(
+      path.join(rb, 'main.ts'),
+      `const main = { stories: ['./stories/**/deep/*.stories.tsx'] }; export default main;`,
+    );
+    // Does NOT match (no `deep/` ancestor) → the `**` walk returns false for it.
+    await fs.writeFile(
+      path.join(storiesDir, 'X.stories.tsx'),
+      `export default { title: 'Top/X' }; export const A = {};`,
+    );
+    // Matches `**/deep/*.stories.tsx`.
+    await fs.writeFile(
+      path.join(deepDir, 'Y.stories.tsx'),
+      `export default { title: 'Deep/Y' }; export const B = {};`,
+    );
+    const stories = await enumerateStories(tmp);
+    const ids = stories.map((s) => s.id).sort();
+    expect(ids).toEqual(['deep-y--b']);
+  });
 });

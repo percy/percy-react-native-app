@@ -19,6 +19,7 @@ export default [
         clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        queueMicrotask: 'readonly',
         URL: 'readonly',
         AbortController: 'readonly',
         fetch: 'readonly',

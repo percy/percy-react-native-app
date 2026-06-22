@@ -24,6 +24,8 @@ vi.mock('../../percy/navigator/navigateToStory.js', () => ({
 }));
 
 import percyStorybookSnapshot from '../../percy/percyStorybookSnapshot.js';
+import { log } from '../../percy/util/log.js';
+import * as postFailedEvents from '../../percy/util/postFailedEvents.js';
 
 const STORY = {
   id: 'forms-button--primary',
@@ -146,5 +148,54 @@ describe('percyStorybookSnapshot — flat option surface', () => {
     ).rejects.toThrow();
     expect(mocks.navigateCalls).toHaveLength(0);
     expect(mocks.percyScreenshotCalls).toHaveLength(0);
+  });
+
+  it('logs the BrowserStack session URL when running on App Automate', async () => {
+    // A driver carrying BS creds resolves to AppAutomateProvider, whose
+    // sessionUrl() returns the dashboard link → the `if (sessionUrl)` log branch.
+    const infoSpy = vi.spyOn(log, 'info').mockImplementation(() => {});
+    const bsDriver = {
+      sessionId: 'bs-session-abc123',
+      capabilities: {
+        platformName: 'Android',
+        'appium:platformVersion': '14.0',
+        'appium:deviceName': 'Samsung Galaxy S23',
+        'bstack:options': { userName: 'u', accessKey: 'k' },
+      },
+    };
+    await percyStorybookSnapshot(bsDriver, STORY, {});
+    const loggedSessionUrl = infoSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((m) => m.includes('app-automate.browserstack.com'));
+    expect(loggedSessionUrl).toContain('bs-session-abc123');
+    expect(mocks.percyScreenshotCalls).toHaveLength(1);
+  });
+
+  it('posts a failed event then rethrows when navigation/screenshot fails', async () => {
+    // navigateToStory throws → the inner try/catch fires postFailedEvent (best
+    // effort) and rethrows the original error to the caller.
+    const postSpy = vi.spyOn(postFailedEvents, 'postFailedEvent').mockImplementation(() => {});
+    const boom = Object.assign(new Error('cold boot blew up'), { code: 'app_cold_boot_timeout' });
+    mocks.navigateImpl.mockImplementation(() => { throw boom; });
+
+    await expect(percyStorybookSnapshot(mockDriver(), STORY, {})).rejects.toBe(boom);
+
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0][0]).toMatchObject({
+      errorCode: 'app_cold_boot_timeout',
+      kind: 'storybook_rn_snapshot',
+      message: 'cold boot blew up',
+    });
+    // percyScreenshot never ran because navigate threw first.
+    expect(mocks.percyScreenshotCalls).toHaveLength(0);
+  });
+
+  it('defaults the failed-event errorCode to screenshot_failed when the error carries none', async () => {
+    const postSpy = vi.spyOn(postFailedEvents, 'postFailedEvent').mockImplementation(() => {});
+    // A plain (codeless) throw → the `?? 'screenshot_failed'` fallback applies.
+    mocks.navigateImpl.mockImplementation(() => { throw new Error('plain failure'); });
+
+    await expect(percyStorybookSnapshot(mockDriver(), STORY, {})).rejects.toThrow('plain failure');
+    expect(postSpy.mock.calls[0][0].errorCode).toBe('screenshot_failed');
   });
 });

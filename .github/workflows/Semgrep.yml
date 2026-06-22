@@ -39,3 +39,8 @@ jobs:
         with:
           sarif_file: semgrep.sarif
         if: always()
+        # Best-effort: the SARIF upload fails when GitHub Advanced Security /
+        # code scanning isn't enabled on the repo ("Resource not accessible by
+        # integration"). The semgrep scan above still runs and gates on blocking
+        # findings; don't fail the job solely on the dashboard upload.
+        continue-on-error: true
