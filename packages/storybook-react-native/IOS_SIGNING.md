@@ -165,4 +165,4 @@ The Apple-side secrets (`APPLE_DIST_CERT_P12`, `APPLE_PROVISIONING_PROFILE`) nee
 - **Lost/expired certificates** — recover via Apple Developer portal; if cert is past expiry, generate a new one and re-sign
 - **Cross-org collaborators** — multiple developers need separate certs OR enroll under the same Apple Dev team
 
-If you hit a roadblock here that's not in the Failure modes table, please file an issue at [`percy/percy-react-native-support`](https://github.com/percy/percy-react-native-support/issues) with the exact xcodebuild output (with cert names + team ID redacted).
+If you hit a roadblock here that's not in the Failure modes table, please file an issue at [`percy/percy-react-native-app`](https://github.com/percy/percy-react-native-app/issues) with the exact xcodebuild output (with cert names + team ID redacted).

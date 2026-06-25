@@ -28,16 +28,27 @@ const TERMINAL_UPLOAD_CODES = new Set([
 ]);
 
 /**
- * Strip anything that looks like a BrowserStack access key from a response
- * body before logging it. Access keys are 20-char alphanumerics; surrounding
- * them with non-word chars lets us catch them embedded in JSON error blobs
- * without false-positive-truncating regular content.
+ * Strip anything that looks like a BrowserStack credential from a string
+ * before logging it. A 4xx/5xx body that reflects the request can echo the
+ * `Authorization: Basic <base64>` header — whose `+ / =` chars the generic
+ * 20-char heuristic misses — so we redact the exact computed `auth` value
+ * (header form and bare base64 payload) first, then fall back to a widened
+ * base64/alphanumeric heuristic for access keys and tokens.
  *
  * @param {string} body
+ * @param {string} [auth]  the computed `Basic <base64>` header to redact verbatim
  */
-function scrubSecrets(body) {
-  return body
-    .replace(/[A-Za-z0-9]{20,}/g, '[redacted]')
+function scrubSecrets(body, auth) {
+  let out = String(body);
+  if (auth) {
+    // Literal (non-regex) replace so the base64 `+ / =` chars aren't treated
+    // as regex metacharacters. Redact both the full header and bare payload.
+    for (const secret of [auth, auth.replace(/^Basic\s+/i, '')]) {
+      if (secret) out = out.split(secret).join('[redacted]');
+    }
+  }
+  return out
+    .replace(/[A-Za-z0-9+/=]{20,}/g, '[redacted]')
     .slice(0, 200);
 }
 
@@ -124,7 +135,7 @@ async function probeRecentApps(authHeader, customId, timeoutMs) {
     if (!Array.isArray(json) || json.length === 0) return undefined;
     return json[0]?.app_url;
   } catch (cause) {
-    log.debug(`[storybook-rn] recent_apps probe failed: ${cause instanceof Error ? cause.message : cause}`);
+    log.debug(`[storybook-rn] recent_apps probe failed: ${scrubSecrets(cause instanceof Error ? cause.message : String(cause), authHeader)}`);
     return undefined;
   } finally {
     clearTimeout(timer);
@@ -172,7 +183,7 @@ async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) 
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_too_large',
-          `BrowserStack rejected the upload (413). ${scrubSecrets(body)}`,
+          `BrowserStack rejected the upload (413). ${scrubSecrets(body, authHeader)}`,
           'Reduce app size or contact BrowserStack support to raise the per-account limit.',
         );
       }
@@ -180,20 +191,20 @@ async function uploadWithRetry(authHeader, data, filename, customId, retryOpts) 
         const body = await res.text().catch(() => '');
         throw err(
           'bs_upload_failed',
-          `BrowserStack upload failed with HTTP ${res.status}: ${scrubSecrets(body)}`,
+          `BrowserStack upload failed with HTTP ${res.status}: ${scrubSecrets(body, authHeader)}`,
           'Verify BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY and try again.',
         );
       }
       if (!res.ok) {
         // 5xx — retry
         const body = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${scrubSecrets(body)}`);
+        throw new Error(`HTTP ${res.status}: ${scrubSecrets(body, authHeader)}`);
       }
       const json = /** @type {{ app_url?: string }} */ (await res.json());
       if (!json.app_url) {
         throw err(
           'bs_upload_failed',
-          `BrowserStack returned 200 but no app_url in response: ${scrubSecrets(JSON.stringify(json))}`,
+          `BrowserStack returned 200 but no app_url in response: ${scrubSecrets(JSON.stringify(json), authHeader)}`,
         );
       }
       return json.app_url;
@@ -245,7 +256,23 @@ export async function provisionApp(localPath, opts = {}) {
 
   const userName = opts?.credentials?.userName ?? process.env.BROWSERSTACK_USERNAME;
   const accessKey = opts?.credentials?.accessKey ?? process.env.BROWSERSTACK_ACCESS_KEY;
-  const isAppAutomate = Boolean(userName && accessKey) && opts?.transport !== 'local';
+  const hasCreds = Boolean(userName && accessKey);
+
+  // Did the caller explicitly ask for App Automate? An explicit
+  // transport/target of 'app-automate', or a bs:// path that only makes sense
+  // on the cloud. If so but creds are missing, DON'T silently fall back to a
+  // local file path — a cloud session can't consume it and would fail opaquely
+  // on-device. Surface the dedicated bs_credentials_missing error (otherwise
+  // unreachable on this path) so the misconfiguration is obvious up front.
+  const wantsAppAutomate =
+    opts?.transport === 'app-automate' ||
+    opts?.target === 'app-automate' ||
+    (typeof localPath === 'string' && localPath.startsWith('bs://'));
+  if (wantsAppAutomate && !hasCreds) {
+    readCredentials(opts); // throws bs_credentials_missing with full guidance
+  }
+
+  const isAppAutomate = hasCreds && opts?.transport !== 'local';
 
   if (!isAppAutomate) {
     // Local transport — no upload. Caller passes the path directly to Appium.
@@ -260,18 +287,25 @@ export async function provisionApp(localPath, opts = {}) {
     return localPath;
   }
 
-  // Sanity check: reject debuggable APKs before consuming BS session minutes.
-  // Debug APKs expect Metro on localhost:8081 to serve JS — on a cloud device,
-  // no Metro = redbox loadJSBundleFromAssets failure. Documented as a known
-  // onboarding gotcha in STORYBOOK_HOST_APP.md.
-  if (!opts?.skipDebugBuildCheck && extname(localPath).toLowerCase() === '.apk') {
+  // Sanity check: reject debuggable Android builds before consuming BS session
+  // minutes. Debug builds expect Metro on localhost:8081 to serve JS — on a
+  // cloud device, no Metro = redbox loadJSBundleFromAssets failure. Documented
+  // as a known onboarding gotcha in STORYBOOK_HOST_APP.md.
+  const androidExt = extname(localPath).toLowerCase();
+  if (!opts?.skipDebugBuildCheck && (androidExt === '.apk' || androidExt === '.aab')) {
     const probe = await readApkDebuggable(localPath).catch(() => null);
     if (probe?.debuggable === true) {
       throw err(
         'build_is_debug_variant',
-        `${basename(localPath)} is a DEBUG build (android:debuggable="true"). Debug APKs expect Metro on localhost:8081 to serve the JS bundle. On a BrowserStack cloud device there is no Metro, so the app would crash with a redbox loadJSBundleFromAssets error.`,
-        'Build the release variant: `cd android && ./gradlew assembleRelease`. To bypass this check (e.g., you set bundleInDebug=true in app/build.gradle), pass { skipDebugBuildCheck: true } to provisionApp().',
+        `${basename(localPath)} is a DEBUG build (android:debuggable="true"). Debug builds expect Metro on localhost:8081 to serve the JS bundle. On a BrowserStack cloud device there is no Metro, so the app would crash with a redbox loadJSBundleFromAssets error.`,
+        'Build the release variant: `cd android && ./gradlew assembleRelease` (or `bundleRelease` for .aab). To bypass this check (e.g., you set bundleInDebug=true in app/build.gradle), pass { skipDebugBuildCheck: true } to provisionApp().',
       );
+    }
+    // .aab manifests are protobuf-encoded at a different path, so the binary
+    // XML probe can't read them — be honest that the check was skipped rather
+    // than implying a clean bill of health.
+    if (androidExt === '.aab' && probe?.debuggable !== false) {
+      log.warn(`[storybook-rn] Could not verify the debuggable flag for ${basename(localPath)} (.aab). Ensure it is a release bundle, or the cloud session may redbox.`);
     }
   }
 
@@ -327,4 +361,5 @@ export function useAppReference(ref) {
 export const __forTesting = {
   fileCustomId,
   buildAuthHeader: basicAuthHeader,
+  scrubSecrets,
 };

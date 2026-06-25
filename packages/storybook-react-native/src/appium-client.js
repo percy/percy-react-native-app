@@ -68,14 +68,64 @@ export class AppiumClient {
   }
 
   /**
+   * Reads a capability that may be stored bare or with the W3C `appium:`
+   * vendor prefix (WDIO 8/9 normalize these differently).
+   * @param {string} key
+   * @returns {unknown}
+   */
+  _cap(key) {
+    const caps = this.driver?.capabilities ?? {};
+    return caps[key] ?? caps[`appium:${key}`];
+  }
+
+  /**
    * Returns the OS+device label for naming snapshots.
    * @returns {string}
    */
   getDeviceLabel() {
-    const caps = this.driver?.capabilities ?? {};
-    const platformName = String(caps.platformName ?? 'unknown');
-    const deviceName = String(caps.deviceName ?? caps['appium:deviceName'] ?? '');
+    const platformName = String(this._cap('platformName') ?? 'unknown');
+    const deviceName = String(this._cap('deviceName') ?? '');
     return deviceName ? `${platformName}-${deviceName}` : platformName;
+  }
+
+  /**
+   * Resolves the device metadata needed to tag a Percy comparison correctly
+   * (osName/osVersion/deviceName/orientation). Sourced from the live session's
+   * capabilities — never hard-coded — so Android and iOS are tagged accurately.
+   * @returns {Promise<import('./comparison-poster.js').DeviceMetadata>}
+   */
+  async getDeviceMetadata() {
+    const platformName = String(this._cap('platformName') ?? '').trim();
+    if (!platformName) {
+      throw err(
+        'invalid_descriptor',
+        'Appium session did not report a platformName capability.',
+        'Set `platformName` (iOS or Android) in your .percy.yml appium.capabilities.',
+      );
+    }
+    // Normalize casing: "ios" → "iOS", "android" → "Android".
+    const osName = /^ios$/i.test(platformName)
+      ? 'iOS'
+      : /^android$/i.test(platformName)
+        ? 'Android'
+        : platformName;
+
+    const osVersion = this._cap('platformVersion');
+    const deviceName = this._cap('deviceName');
+
+    let orientation;
+    try {
+      orientation = await this.driver?.getOrientation?.();
+    } catch {
+      // Some drivers throw if orientation isn't queryable; default below.
+    }
+
+    return {
+      osName,
+      osVersion: osVersion != null ? String(osVersion) : undefined,
+      deviceName: deviceName != null ? String(deviceName) : undefined,
+      orientation: orientation ? String(orientation).toLowerCase() : 'portrait',
+    };
   }
 
   async disconnect() {

@@ -71,6 +71,25 @@ describe('buildAndProvision — input validation', () => {
   });
 });
 
+describe('buildAndProvision — iOS bare-RN with no ios/ directory', () => {
+  it('maps the readdir ENOENT to a typed build_artifact_not_found', async () => {
+    // Bare RN (not Expo) + simulator target skips `expo prebuild`, so the
+    // missing ios/ dir hits fs.readdir directly. Without the mapping this
+    // would surface as a raw Node ENOENT, breaking the typed-error contract.
+    writeFileSync(
+      join(tmp, 'package.json'),
+      JSON.stringify({ dependencies: { 'react-native': '0.74.0' } }),
+    );
+    await expect(
+      buildAndProvision({
+        projectPath: tmp,
+        platform: 'ios',
+        target: 'simulator',
+      }),
+    ).rejects.toMatchObject({ code: 'build_artifact_not_found' });
+  });
+});
+
 describe('buildAndProvision — iOS App Automate signing wall', () => {
   it('throws apple_signing_required for ios + app-automate target', async () => {
     writeFileSync(

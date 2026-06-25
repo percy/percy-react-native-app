@@ -11,7 +11,7 @@ import {
 
 const skipIf = (cond) => (cond ? it.skip : it);
 
-const { fileCustomId, buildAuthHeader } = __forTesting;
+const { fileCustomId, buildAuthHeader, scrubSecrets } = __forTesting;
 
 let tmp;
 let apkPath;
@@ -192,13 +192,21 @@ describe('provisionApp — App Automate transport', () => {
     ).rejects.toMatchObject({ code: 'bs_upload_too_large' });
   });
 
-  it('throws bs_credentials_missing when env not set and no opts.credentials', async () => {
-    // No env vars set in this test (cleared in beforeEach).
-    // Without creds, provisionApp returns local path — not an error.
-    // But explicitly forcing transport=app-automate should throw.
-    // Actually: per spec, no creds => local transport, return local path.
-    const ref = await provisionApp(apkPath);
-    expect(ref).toBe(apkPath);
+  it('throws bs_credentials_missing when transport=app-automate but creds are absent', async () => {
+    // No env vars set in this test (cleared in beforeEach). Explicit
+    // App Automate intent with no creds must NOT silently downgrade to a
+    // local file path (which a cloud session can't use) — it must throw.
+    await expect(
+      provisionApp(apkPath, { transport: 'app-automate' }),
+    ).rejects.toMatchObject({ code: 'bs_credentials_missing' });
+  });
+
+  it('throws bs_credentials_missing when target=app-automate but creds are absent', async () => {
+    // buildAndProvision passes `target` (not `transport`) through; the same
+    // App Automate intent must be honoured.
+    await expect(
+      provisionApp(apkPath, { target: 'app-automate' }),
+    ).rejects.toMatchObject({ code: 'bs_credentials_missing' });
   });
 });
 
@@ -314,6 +322,23 @@ describe('provisionApp — error body scrubbing', () => {
     expect(caught.message).toContain('[redacted]');
     expect(caught.message).not.toContain('AbCdEfGhIjKlMnOpQrSt');
     expect(caught.message).not.toContain('BlAhBlAhBlAhBlAhBlAh');
+  });
+
+  it('redacts a base64 Basic Authorization header echoed in a body', () => {
+    const auth = buildAuthHeader('myuser', 'sk-AbCd+Ef/12345678==');
+    const base64 = auth.replace(/^Basic\s+/, '');
+    const body = `400 Bad Request — received header Authorization: ${auth}`;
+    const scrubbed = scrubSecrets(body, auth);
+    // The base64 payload (with + / =) must not survive — the generic
+    // alphanumeric heuristic alone would leak it.
+    expect(scrubbed).not.toContain(base64);
+    expect(scrubbed).toContain('[redacted]');
+  });
+
+  it('still redacts long base64 runs even without an auth value passed', () => {
+    const scrubbed = scrubSecrets('token=AbCd1234+EfGh5678/IjKl90==xyz');
+    expect(scrubbed).not.toContain('AbCd1234+EfGh5678/IjKl90==');
+    expect(scrubbed).toContain('[redacted]');
   });
 });
 

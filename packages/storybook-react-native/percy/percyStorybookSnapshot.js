@@ -83,6 +83,10 @@ export default async function percyStorybookSnapshot(driver, story, options = {}
   assertValidStoryDescriptor(story);
 
   const provider = ProviderResolver.resolve(driver);
+  // Pull live session caps before building the device label — WDIO v9 often
+  // only populates negotiated caps post-session, so the eager static read
+  // can otherwise yield `unknown` device names.
+  await provider.initMetadata();
   const snapshotName = `${story.componentTitle}/${story.name}/${provider.metadata.deviceLabel()}`;
 
   // Split the flat options into navigation-only keys and forwarded
@@ -124,14 +128,19 @@ export default async function percyStorybookSnapshot(driver, story, options = {}
     log.info(`[storybook-rn] BrowserStack session: ${sessionUrl}`);
   }
 
-  const { durationMs } = await TimeIt.run(async () => {
+  const { result, durationMs } = await TimeIt.run(async () => {
     try {
       await navigateToStory(provider.driver, story, navOpts);
-      await percyScreenshot(driver, snapshotName, snapshotOpts);
+      // Thread the percyScreenshot result (snapshot link / comparison body)
+      // back to callers — sync, testCase, and library-mode flows rely on it.
+      // Mirrors @percy/appium-app returning response?.body?.data.
+      return await percyScreenshot(driver, snapshotName, snapshotOpts);
     } catch (cause) {
       // Best-effort telemetry — never let postFailedEvent failure mask the original.
       const code = /** @type {{ code?: string }} */ (cause)?.code ?? 'screenshot_failed';
-      postFailedEvent({
+      // Await so the event isn't dropped if the process exits right after the
+      // throw. postFailedEvent never throws, so this can't mask `cause`.
+      await postFailedEvent({
         message: cause instanceof Error ? cause.message : String(cause),
         errorCode: code,
         kind: 'storybook_rn_snapshot',
@@ -141,6 +150,7 @@ export default async function percyStorybookSnapshot(driver, story, options = {}
   });
 
   log.debug(`[storybook-rn] ${story.id} captured in ${durationMs}ms (${provider.transport()})`);
+  return result;
 }
 
 export const __forTesting = { NAVIGATION_OPTS };

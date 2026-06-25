@@ -7,12 +7,14 @@ const mocks = vi.hoisted(() => {
     percyScreenshotCalls: /** @type {Array<{ name: string, opts: any }>} */ ([]),
     navigateCalls: /** @type {Array<{ id: string, opts: any }>} */ ([]),
     navigateImpl: vi.fn(),
+    screenshotResult: /** @type {any} */ (undefined),
   };
 });
 
 vi.mock('@percy/appium-app', () => ({
   default: async (_driver, name, opts) => {
     mocks.percyScreenshotCalls.push({ name, opts });
+    return mocks.screenshotResult;
   },
 }));
 
@@ -47,6 +49,7 @@ describe('percyStorybookSnapshot — flat option surface', () => {
     mocks.navigateCalls.length = 0;
     mocks.navigateImpl.mockReset();
     mocks.navigateImpl.mockReturnValue(undefined);
+    mocks.screenshotResult = undefined;
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -138,6 +141,13 @@ describe('percyStorybookSnapshot — flat option surface', () => {
     await percyStorybookSnapshot(mockDriver(), STORY, {});
     const name = mocks.percyScreenshotCalls[0].name;
     expect(name.startsWith('Forms/Button/Primary/')).toBe(true);
+  });
+
+  it('returns the percyScreenshot result to the caller', async () => {
+    const expected = { body: { data: { link: 'https://percy.io/snap/123' } } };
+    mocks.screenshotResult = expected;
+    const ret = await percyStorybookSnapshot(mockDriver(), STORY, {});
+    expect(ret).toBe(expected);
   });
 
   it('rejects invalid story descriptors before doing any work', async () => {

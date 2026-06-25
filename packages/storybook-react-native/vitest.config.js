@@ -13,12 +13,13 @@ export default defineConfig({
         // CLI command harness — composed from @percy/cli-command, exercised
         // end-to-end via runner.test.js. Unit coverage would be tautological.
         'src/commands/**',
-        // Legacy Phase 1 metro-channel CLI path. The library-mode API
-        // (percyStorybookSnapshot + provisionApp) is the canonical surface
-        // for v0.2+; these files remain for backwards-compat with the
-        // original `npx percy storybook-rn` flow and are integration-tested
-        // via `test/runner.test.js`.
-        'src/runner.js',
+        // Thin I/O wrappers with no branching logic of their own:
+        //   - appium-client.js wraps webdriverio's remote()/takeScreenshot()
+        //   - storybook-channel.js wraps fetch() against the metro channel
+        // Both require a live Appium session / metro server to exercise
+        // meaningfully and are covered end-to-end via the example repo run.
+        // The orchestration that ties them together (src/runner.js) IS unit
+        // tested in test/runner.test.js with these collaborators mocked.
         'src/appium-client.js',
         'src/storybook-channel.js',
         // Telemetry shim — best-effort POST to Percy backend, no-op when

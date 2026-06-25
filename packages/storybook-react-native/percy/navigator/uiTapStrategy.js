@@ -133,6 +133,19 @@ function detectPlatform(appiumDriver) {
   return String(caps['appium:platformName'] ?? caps.platformName ?? '').toLowerCase();
 }
 
+/**
+ * Escape a story-author-controlled string for safe interpolation into a
+ * UiAutomator string literal or an iOS NSPredicate. Backslash MUST be escaped
+ * before the double-quote, otherwise a trailing `\` would escape the closing
+ * quote and let the text break out of the literal (turning the rest of a title
+ * into selector syntax / matcher method calls).
+ * @param {unknown} text
+ * @returns {string}
+ */
+function escapeSelectorText(text) {
+  return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 async function awaitColdBoot(appiumDriver, opts) {
   const platform = detectPlatform(appiumDriver);
   const selectors = drawerToggleSelectors(platform);
@@ -180,7 +193,7 @@ async function openDrawer(appiumDriver, state) {
  * exposed by Storybook RN).
  */
 async function tapByText(appiumDriver, text) {
-  const safe = String(text).replace(/"/g, '\\"');
+  const safe = escapeSelectorText(text);
   const platform = detectPlatform(appiumDriver);
   const selector =
     platform === 'ios'
@@ -308,7 +321,7 @@ async function verifyCachedState(appiumDriver, state) {
   const sample = state.expandedComponents.values().next().value;
   // Use the leaf-most segment of the sample path.
   const leafText = String(sample).split('/').pop();
-  const safe = leafText.replace(/"/g, '\\"');
+  const safe = escapeSelectorText(leafText);
   const el = await pollForElement(
     appiumDriver,
     `android=new UiSelector().text("${safe}")`,

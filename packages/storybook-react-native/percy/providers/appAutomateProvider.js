@@ -2,12 +2,15 @@ import { GenericProvider } from './genericProvider.js';
 
 /**
  * AppAutomateProvider — extends GenericProvider with BrowserStack-specific
- * behavior. Mirrors @percy/percy-appium-js's appAutomateProvider.js shape.
+ * reporting (session URL surfacing). Like GenericProvider, it does NOT
+ * reimplement @percy/percy-appium-js's screenshot/getTiles/percyScreenshotBegin
+ * contract — capture is delegated to @percy/appium-app. It only borrows the
+ * subclass/dispatch shape so transport detection is familiar.
  *
  * Static `supports(driver)` is the load-bearing dispatch hook — returns
  * true only when the driver has actual BS credentials in its capability
- * map. An empty `'bstack:options': {}` does NOT count (correctness fix
- * from the deepening review — empty objects are truthy in JS).
+ * map. An empty `'bstack:options': {}` does NOT count (empty objects are
+ * truthy in JS).
  */
 export class AppAutomateProvider extends GenericProvider {
   /**
