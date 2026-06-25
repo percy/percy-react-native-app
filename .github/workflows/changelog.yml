@@ -1,11 +1,12 @@
 name: Release Drafter
 
 on:
+  # Runs only on the default branch: release-drafter reads its config from the
+  # default branch, so a pull_request run on a branch that introduces the
+  # config (or any branch) fails with "config not found". Drafting the next
+  # release on push to main is the intended trigger.
   push:
     branches: [main]
-  # Allow the draft to be recalculated when PRs are (re)labeled.
-  pull_request:
-    types: [opened, reopened, synchronize, labeled, unlabeled]
 
 permissions:
   contents: read
