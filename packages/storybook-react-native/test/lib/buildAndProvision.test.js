@@ -72,21 +72,34 @@ describe('buildAndProvision — input validation', () => {
 });
 
 describe('buildAndProvision — iOS bare-RN with no ios/ directory', () => {
-  it('maps the readdir ENOENT to a typed build_artifact_not_found', async () => {
-    // Bare RN (not Expo) + simulator target skips `expo prebuild`, so the
-    // missing ios/ dir hits fs.readdir directly. Without the mapping this
-    // would surface as a raw Node ENOENT, breaking the typed-error contract.
+  const isDarwin = process.platform === 'darwin';
+
+  function writeBareRnPkg() {
     writeFileSync(
       join(tmp, 'package.json'),
       JSON.stringify({ dependencies: { 'react-native': '0.74.0' } }),
     );
+  }
+
+  // The readdir ENOENT mapping lives *after* the macOS guard in
+  // buildIosSimulator, so it's only reachable on darwin. Bare RN (not Expo) +
+  // simulator target skips `expo prebuild`, so the missing ios/ dir hits
+  // fs.readdir directly — without the mapping that would surface as a raw Node
+  // ENOENT, breaking the typed-error contract.
+  it.runIf(isDarwin)('maps the readdir ENOENT to a typed build_artifact_not_found (macOS)', async () => {
+    writeBareRnPkg();
     await expect(
-      buildAndProvision({
-        projectPath: tmp,
-        platform: 'ios',
-        target: 'simulator',
-      }),
+      buildAndProvision({ projectPath: tmp, platform: 'ios', target: 'simulator' }),
     ).rejects.toMatchObject({ code: 'build_artifact_not_found' });
+  });
+
+  // Off macOS (e.g. Linux CI), the earlier toolchain guard fires first — assert
+  // that typed error there so the path still has coverage on every platform.
+  it.skipIf(isDarwin)('throws build_toolchain_missing for iOS builds off macOS', async () => {
+    writeBareRnPkg();
+    await expect(
+      buildAndProvision({ projectPath: tmp, platform: 'ios', target: 'simulator' }),
+    ).rejects.toMatchObject({ code: 'build_toolchain_missing' });
   });
 });
 
