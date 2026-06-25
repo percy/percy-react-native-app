@@ -10,8 +10,8 @@ import { GenericProvider } from './genericProvider.js';
  *
  * Static `supports(driver)` is the load-bearing dispatch hook — returns
  * true only when the driver has actual BS credentials in its capability
- * map. An empty `'bstack:options': {}` does NOT count (correctness fix
- * from the deepening review — empty objects are truthy in JS).
+ * map. An empty `'bstack:options': {}` does NOT count (empty objects are
+ * truthy in JS).
  */
 export class AppAutomateProvider extends GenericProvider {
   /**

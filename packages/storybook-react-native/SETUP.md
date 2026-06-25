@@ -249,7 +249,7 @@ A complete working setup lives in the standalone [`percy/example-percy-storybook
 
 ---
 
-Issues? File at https://github.com/percy/percy-react-native-support/issues.
+Issues? File at https://github.com/percy/percy-react-native-app/issues.
 
 
 ---

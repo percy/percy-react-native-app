@@ -3,6 +3,7 @@ import { mergeConfig, PERCY_CONFIG_SCHEMA } from '../config.js';
 import { run } from '../runner.js';
 import { PercyStorybookRNError } from '../errors.js';
 import { enumerateStories } from '../story-enumerator.js';
+import { postFailedEvent } from '../../percy/util/postFailedEvents.js';
 import doctor from './doctor.js';
 import init from './init.js';
 
@@ -27,7 +28,12 @@ export default command('storybook-rn', {
   flags: [
     {
       name: 'include',
-      description: 'Story-id glob pattern (overrides .percy.yml).',
+      description: 'Story-id glob pattern(s) to capture, comma-separated (overrides .percy.yml include).',
+      type: 'string',
+    },
+    {
+      name: 'exclude',
+      description: 'Story-id glob pattern(s) to skip, comma-separated (merged with .percy.yml skip).',
       type: 'string',
     },
     {
@@ -57,7 +63,10 @@ export default command('storybook-rn', {
   const config = mergeConfig(userConfig);
 
   if (flags.include) {
-    config.include = [flags.include];
+    config.include = splitPatterns(flags.include);
+  }
+  if (flags.exclude) {
+    config.skip = [...config.skip, ...splitPatterns(flags.exclude)];
   }
 
   let stories;
@@ -72,6 +81,7 @@ export default command('storybook-rn', {
       log.info(`Discovered ${stories.length} story/stories.`);
     }
   } catch (e) {
+    await reportFailure(e, 'storybook_rn_enumerate');
     if (e instanceof PercyStorybookRNError) {
       log.error(e.toCLIString());
       return exit(1, e.message, false);
@@ -96,6 +106,7 @@ export default command('storybook-rn', {
       onProgress: (line) => log.info(line),
     });
   } catch (e) {
+    await reportFailure(e, 'storybook_rn_run');
     if (e instanceof PercyStorybookRNError) {
       log.error(e.toCLIString());
       return exit(1, e.message, false);
@@ -103,6 +114,33 @@ export default command('storybook-rn', {
     throw e;
   }
 });
+
+/**
+ * Fire best-effort failure telemetry for the CLI capture path. Mirrors the
+ * library-mode path in percyStorybookSnapshot — CLI mode previously shipped
+ * blind. Awaited so the event isn't dropped on process exit; postFailedEvent
+ * never throws.
+ *
+ * @param {unknown} e
+ * @param {string} kind
+ */
+async function reportFailure(e, kind) {
+  const code = e instanceof PercyStorybookRNError ? e.code : 'storybook_rn_cli_failed';
+  await postFailedEvent({
+    message: e instanceof Error ? e.message : String(e),
+    errorCode: code,
+    kind,
+  });
+}
+
+/**
+ * Split a comma-separated glob flag into trimmed, non-empty patterns.
+ * @param {string} flag
+ * @returns {string[]}
+ */
+function splitPatterns(flag) {
+  return flag.split(',').map((p) => p.trim()).filter(Boolean);
+}
 
 /**
  * @param {string} flag  comma-separated story IDs

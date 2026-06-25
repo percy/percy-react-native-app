@@ -46,7 +46,7 @@ A Percy build URL prints when the run completes. Open it to see one snapshot per
 - ✅ End-to-end pipeline verified on iPhone 16 Simulator with iOS 18.4
 - ✅ Auto story enumeration from `.rnstorybook/main.{ts,js}` + `.stories.*` files
 - ✅ Reuses Percy's existing CLI upload pipeline (no new backend)
-- ✅ 233 unit tests passing across local emulator (CLI mode) and BrowserStack App Automate (library mode)
+- ✅ Unit test suite covering both local emulator (CLI mode) and BrowserStack App Automate (library mode)
 
 ## License
 

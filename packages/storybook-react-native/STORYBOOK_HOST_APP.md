@@ -219,4 +219,4 @@ The SDK is validated against a specific set of Storybook RN + RN + build-tooling
 
 **Legend:** ✅ works · ❌ fails with clear error · ⚠️ has workaround · 🟡 planned
 
-If you're hitting a ❌ or ⚠️ above and the workaround doesn't fit your setup, please file an issue at [`percy/percy-react-native-support`](https://github.com/percy/percy-react-native-support/issues) with your Storybook RN version, RN version, and a minimal reproduction.
+If you're hitting a ❌ or ⚠️ above and the workaround doesn't fit your setup, please file an issue at [`percy/percy-react-native-app`](https://github.com/percy/percy-react-native-app/issues) with your Storybook RN version, RN version, and a minimal reproduction.

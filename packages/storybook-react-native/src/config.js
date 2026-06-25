@@ -6,7 +6,7 @@ import { err } from './errors.js';
  *
  * @typedef {Object} StorybookRNConfig
  * @property {{ server: string, capabilities: Record<string, unknown> }} appium
- * @property {{ websocketHost: string, websocketPort: number, waitForReadyMs: number }} storybook
+ * @property {{ websocketHost: string, websocketPort: number, waitForReadyMs: number, settleMs: number }} storybook
  * @property {string[]} include
  * @property {string[]} skip
  */
@@ -20,19 +20,29 @@ export const DEFAULT_CONFIG = {
   storybook: {
     websocketHost: 'localhost',
     websocketPort: 7007,
-    waitForReadyMs: 1000,
+    // Backstop wait for the device render-ack. Kept in sync with the value the
+    // init template scaffolds into .percy.yml.
+    waitForReadyMs: 4000,
+    // Settle delay after render commit (animations / image decode) before the
+    // screenshot is taken.
+    settleMs: 250,
   },
   include: ['**/*'],
   skip: [],
 };
 
 /**
- * Merges a partial user config over defaults.
+ * Merges a partial user config over defaults. Always returns a fresh object so
+ * callers can mutate the result (e.g. applying --include) without corrupting
+ * the shared DEFAULT_CONFIG singleton.
  * @param {Partial<StorybookRNConfig>} [partial]
  * @returns {StorybookRNConfig}
  */
 export function mergeConfig(partial) {
-  if (!partial) return DEFAULT_CONFIG;
+  // Always build a fresh object (never return the shared DEFAULT_CONFIG
+  // singleton) so callers can safely mutate the result (e.g. applying
+  // --include). Then validate before handing it back.
+  partial ??= {};
   const merged = {
     appium: {
       ...DEFAULT_CONFIG.appium,
@@ -125,6 +135,7 @@ export const PERCY_CONFIG_SCHEMA = {
           websocketHost: { type: 'string', default: DEFAULT_CONFIG.storybook.websocketHost },
           websocketPort: { type: 'integer', default: DEFAULT_CONFIG.storybook.websocketPort },
           waitForReadyMs: { type: 'integer', default: DEFAULT_CONFIG.storybook.waitForReadyMs },
+          settleMs: { type: 'integer', default: DEFAULT_CONFIG.storybook.settleMs },
         },
       },
       include: { type: 'array', items: { type: 'string' } },

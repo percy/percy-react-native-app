@@ -1,17 +1,42 @@
+import { readFileSync } from 'node:fs';
 import * as utils from '@percy/sdk-utils';
 import { err } from './errors.js';
 
 /**
+ * @typedef {Object} DeviceMetadata
+ * @property {string} osName        e.g. "iOS" / "Android" (from Appium platformName)
+ * @property {string} [osVersion]   e.g. "18.4"
+ * @property {string} [deviceName]  e.g. "iPhone 16"
+ * @property {string} [orientation] "portrait" | "landscape"
+ *
  * @typedef {Object} ComparisonInput
  * @property {string} name        Snapshot name, e.g. "Button/Primary/iOS-iPhone-15"
  * @property {string} tag         Device label, used for grouping (e.g. "iOS-iPhone-15")
  * @property {string} [osName]    OS name for the tag ('iOS' | 'Android'); defaults to 'iOS'
  * @property {string} screenshotBase64
+ * @property {DeviceMetadata} device  resolved Appium device metadata
+ * @property {string} [environmentInfo]  e.g. "webdriverio/9.0.0" — SDK->backend attribution
  *
  * Wraps `@percy/sdk-utils` `postComparison`, which POSTs to the Percy CLI
  * server at localhost:5338 — the same endpoint @percy/appium-app uses.
  * The CLI handles the actual upload to the Percy backend.
  */
+
+/**
+ * Self-identifying client string sent on every comparison, mirroring how
+ * @percy/appium-app sends `clientInfo`. Read from this package's own
+ * package.json so it stays in sync with the published version.
+ */
+export const CLIENT_INFO = (() => {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    );
+    return `${pkg.name}/${pkg.version}`;
+  } catch {
+    return '@percy/storybook-react-native';
+  }
+})();
 
 /**
  * @returns {Promise<boolean>}
@@ -37,7 +62,7 @@ function readPngDimensions(png) {
   if (png.length < 24) {
     throw err('screenshot_failed', 'Screenshot buffer too small to be a PNG.');
   }
-  const sig = png.slice(0, 8).toString('hex');
+  const sig = png.subarray(0, 8).toString('hex');
   if (sig !== '89504e470d0a1a0a') {
     throw err('screenshot_failed', 'Screenshot is not a PNG (unexpected signature).');
   }
@@ -57,20 +82,34 @@ export async function postSnapshotComparison(input) {
     );
   }
 
+  const device = input.device ?? {};
+  if (!device.osName) {
+    throw err(
+      'invalid_descriptor',
+      'Device metadata is missing osName; cannot tag the comparison.',
+      'This is an internal error — please report it with DEBUG=1 output.',
+    );
+  }
+
   const buffer = Buffer.from(input.screenshotBase64, 'base64');
   const { width, height } = readPngDimensions(buffer);
 
-  // postComparison schema mirrors @percy/appium-app's GenericProvider tile.
-  // App Percy requires explicit width/height per tile; status/nav bar offsets
-  // can be added later for cropping. fullscreen=false → single-tile snapshot
-  // (no full-page stitching needed for component-level visual testing).
-  // Per @percy/core comparisonSchema: width/height belong on `tag`, not on tiles.
-  // tiles only carry content + crop offsets (statusBar/navBar/header/footer).
+  // Payload mirrors @percy/appium-app's GenericProvider comparison shape:
+  // width/height/osName/osVersion/orientation/deviceName live on `tag`; the
+  // tile carries content + crop offsets. clientInfo/environmentInfo provide
+  // SDK attribution in the Percy dashboard. externalDebugUrl is omitted for
+  // local Appium (no remote session to link). fullscreen=false → single tile
+  // (component-level testing needs no full-page stitching).
   await utils.postComparison({
     name: input.name,
+    clientInfo: CLIENT_INFO,
+    environmentInfo: input.environmentInfo,
     tag: {
       name: input.tag,
-      osName: input.osName ?? 'iOS',
+      osName: device.osName,
+      osVersion: device.osVersion,
+      deviceName: device.deviceName,
+      orientation: device.orientation,
       width,
       height,
     },

@@ -38,6 +38,43 @@ describe('MetadataResolver.resolve', () => {
   });
 });
 
+describe('MetadataResolver.resolveLive', () => {
+  it('merges live getCapabilities() over empty static caps (WDIO v9 post-session)', async () => {
+    // Static map is empty pre-session; the negotiated platform/device only
+    // appear once getCapabilities() is queried.
+    const driver = {
+      capabilities: {},
+      getCapabilities: async () => ({ platformName: 'Android', 'appium:deviceName': 'Pixel 8' }),
+    };
+    const md = await MetadataResolver.resolveLive(driver);
+    expect(md).toBeInstanceOf(AndroidMetadata);
+    expect(md.deviceLabel()).toBe('Android-Pixel 8');
+  });
+
+  it('lets live caps win over a stale static platform', async () => {
+    const driver = {
+      capabilities: { platformName: 'Android' },
+      getCapabilities: async () => ({ platformName: 'iOS' }),
+    };
+    expect(await MetadataResolver.resolveLive(driver)).toBeInstanceOf(IosMetadata);
+  });
+
+  it('falls back to static caps when getCapabilities() throws', async () => {
+    const driver = {
+      capabilities: { platformName: 'iOS' },
+      getCapabilities: async () => {
+        throw new Error('no session');
+      },
+    };
+    expect(await MetadataResolver.resolveLive(driver)).toBeInstanceOf(IosMetadata);
+  });
+
+  it('falls back to static caps when the driver has no getCapabilities()', async () => {
+    const md = await MetadataResolver.resolveLive({ capabilities: { platformName: 'Android' } });
+    expect(md).toBeInstanceOf(AndroidMetadata);
+  });
+});
+
 describe('AndroidMetadata', () => {
   it('reads appium:appPackage / appium:appActivity', () => {
     const md = new AndroidMetadata({

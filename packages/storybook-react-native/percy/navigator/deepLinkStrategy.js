@@ -89,7 +89,7 @@ export async function deepLinkNavigate(appiumDriver, descriptor, opts) {
   // Single source of truth for platform + version gating. MetadataResolver
   // wraps the raw caps in IosMetadata / AndroidMetadata so we don't end up
   // with parallel regex extractors drifting from each other.
-  const metadata = MetadataResolver.resolve(appiumDriver.driver);
+  const metadata = await MetadataResolver.resolveLive(appiumDriver.driver);
   const isIos = metadata.platformName().toLowerCase() === 'ios';
   const url = buildDeepLinkUrl(merged.appScheme, descriptor.id);
 

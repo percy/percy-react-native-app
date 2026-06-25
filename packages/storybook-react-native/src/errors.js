@@ -1,6 +1,8 @@
 /**
- * Error catalog — the acceptance contract from the v2 plan.
- * Every CLI failure path produces one of these.
+ * Shared error catalog for both modes. Codes prefixed `bs_`/`nav_`/`build_`/
+ * `apple_`/`url_` and `unsupported_*` belong to library mode (App Automate +
+ * build provisioning); the rest are the CLI metro-channel path. Every failure
+ * path in either mode produces one of these so messages stay actionable.
  *
  * @typedef {'no_stories_found'
  *   | 'appium_unreachable'

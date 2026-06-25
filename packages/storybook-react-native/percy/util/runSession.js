@@ -1,3 +1,5 @@
+import { log } from './log.js';
+
 /**
  * runSession — try/finally wrapper that guarantees driver.deleteSession()
  * runs even when the customer's test body throws. Reduces the high-frequency
@@ -17,9 +19,11 @@ export async function runSession(driver, fn) {
   } finally {
     try {
       await driver.deleteSession();
-    } catch {
-      // Best-effort: ignore teardown errors so the original test failure
-      // (if any) is what the customer sees.
+    } catch (cause) {
+      // Best-effort: don't let a teardown failure mask the original test
+      // failure, but surface it at debug level so a leaked session is
+      // diagnosable rather than invisible.
+      log.debug(`[storybook-rn] deleteSession() failed during teardown: ${cause instanceof Error ? cause.message : cause}`);
     }
   }
 }

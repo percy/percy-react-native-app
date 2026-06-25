@@ -1,0 +1,36 @@
+name: Typecheck
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/storybook-react-native/types/**'
+      - 'packages/storybook-react-native/index.js'
+      - '.github/workflows/typecheck.yml'
+  pull_request:
+    paths:
+      - 'packages/storybook-react-native/types/**'
+      - 'packages/storybook-react-native/index.js'
+      - '.github/workflows/typecheck.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/storybook-react-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Type-check shipped declarations
+        # Parse and type-check the hand-written .d.ts so a malformed public
+        # type surface fails CI before it ships to npm.
+        run: npx -y -p typescript@5 tsc --noEmit --strict --skipLibCheck types/index.d.ts
