@@ -28,25 +28,30 @@ const TERMINAL_UPLOAD_CODES = new Set([
 ]);
 
 /**
- * Strip credentials from a response body before logging it. We redact the
- * exact known secrets first (the access key / userName we hold in scope —
- * this catches keys that contain hyphens or are shorter than the heuristic
- * threshold), then fall back to the 20-char-alphanumeric heuristic for any
- * key echoed in a shape we didn't anticipate. Finally truncate to 200 chars.
+ * Strip credentials from a string before logging it. Redacts the exact known
+ * secrets first — accepts either a single value or an array (the access key /
+ * userName / the computed `Basic <base64>` auth header we hold in scope) —
+ * which catches keys containing hyphens or shorter than the heuristic
+ * threshold. Then falls back to a widened base64/alphanumeric heuristic for
+ * any key (or reflected `Authorization` header — whose `+ / =` chars the plain
+ * alphanumeric heuristic would miss) echoed in a shape we didn't anticipate.
+ * Finally truncates to 200 chars.
  *
  * @param {string} body
- * @param {string[]} [secrets]  exact literal values to redact (e.g. accessKey)
+ * @param {string | string[]} [secrets]  exact literal value(s) to redact (e.g. accessKey, auth header)
  */
 function scrubSecrets(body, secrets = []) {
-  let scrubbed = body;
-  for (const s of secrets) {
+  const list = Array.isArray(secrets) ? secrets : [secrets];
+  let scrubbed = String(body);
+  for (const s of list) {
     // Only redact non-trivial values — a 1-char "secret" would nuke the body.
     if (typeof s === 'string' && s.length >= 4) {
       scrubbed = scrubbed.split(s).join('[redacted]');
     }
   }
   return scrubbed
-    .replace(/[A-Za-z0-9]{20,}/g, '[redacted]')
+    // Widened to include base64 `+ / =` so a reflected Basic-auth header is caught.
+    .replace(/[A-Za-z0-9+/=]{20,}/g, '[redacted]')
     .slice(0, 200);
 }
 
@@ -133,7 +138,7 @@ async function probeRecentApps(authHeader, customId, timeoutMs) {
     if (!Array.isArray(json) || json.length === 0) return undefined;
     return json[0]?.app_url;
   } catch (cause) {
-    log.debug(`[storybook-rn] recent_apps probe failed: ${cause instanceof Error ? cause.message : cause}`);
+    log.debug(`[storybook-rn] recent_apps probe failed: ${scrubSecrets(cause instanceof Error ? cause.message : String(cause), authHeader)}`);
     return undefined;
   } finally {
     clearTimeout(timer);
@@ -255,7 +260,23 @@ export async function provisionApp(localPath, opts = {}) {
 
   const userName = opts?.credentials?.userName ?? process.env.BROWSERSTACK_USERNAME;
   const accessKey = opts?.credentials?.accessKey ?? process.env.BROWSERSTACK_ACCESS_KEY;
-  const isAppAutomate = Boolean(userName && accessKey) && opts?.transport !== 'local';
+  const hasCreds = Boolean(userName && accessKey);
+
+  // Did the caller explicitly ask for App Automate? An explicit
+  // transport/target of 'app-automate', or a bs:// path that only makes sense
+  // on the cloud. If so but creds are missing, DON'T silently fall back to a
+  // local file path — a cloud session can't consume it and would fail opaquely
+  // on-device. Surface the dedicated bs_credentials_missing error (otherwise
+  // unreachable on this path) so the misconfiguration is obvious up front.
+  const wantsAppAutomate =
+    opts?.transport === 'app-automate' ||
+    opts?.target === 'app-automate' ||
+    (typeof localPath === 'string' && localPath.startsWith('bs://'));
+  if (wantsAppAutomate && !hasCreds) {
+    readCredentials(opts); // throws bs_credentials_missing with full guidance
+  }
+
+  const isAppAutomate = hasCreds && opts?.transport !== 'local';
 
   if (!isAppAutomate) {
     // Local transport — no upload. Caller passes the path directly to Appium.
@@ -270,18 +291,25 @@ export async function provisionApp(localPath, opts = {}) {
     return localPath;
   }
 
-  // Sanity check: reject debuggable APKs before consuming BS session minutes.
-  // Debug APKs expect Metro on localhost:8081 to serve JS — on a cloud device,
-  // no Metro = redbox loadJSBundleFromAssets failure. Documented as a known
-  // onboarding gotcha in STORYBOOK_HOST_APP.md.
-  if (!opts?.skipDebugBuildCheck && extname(localPath).toLowerCase() === '.apk') {
+  // Sanity check: reject debuggable Android builds before consuming BS session
+  // minutes. Debug builds expect Metro on localhost:8081 to serve JS — on a
+  // cloud device, no Metro = redbox loadJSBundleFromAssets failure. Documented
+  // as a known onboarding gotcha in STORYBOOK_HOST_APP.md.
+  const androidExt = extname(localPath).toLowerCase();
+  if (!opts?.skipDebugBuildCheck && (androidExt === '.apk' || androidExt === '.aab')) {
     const probe = await readApkDebuggable(localPath).catch(() => null);
     if (probe?.debuggable === true) {
       throw err(
         'build_is_debug_variant',
-        `${basename(localPath)} is a DEBUG build (android:debuggable="true"). Debug APKs expect Metro on localhost:8081 to serve the JS bundle. On a BrowserStack cloud device there is no Metro, so the app would crash with a redbox loadJSBundleFromAssets error.`,
-        'Build the release variant: `cd android && ./gradlew assembleRelease`. To bypass this check (e.g., you set bundleInDebug=true in app/build.gradle), pass { skipDebugBuildCheck: true } to provisionApp().',
+        `${basename(localPath)} is a DEBUG build (android:debuggable="true"). Debug builds expect Metro on localhost:8081 to serve the JS bundle. On a BrowserStack cloud device there is no Metro, so the app would crash with a redbox loadJSBundleFromAssets error.`,
+        'Build the release variant: `cd android && ./gradlew assembleRelease` (or `bundleRelease` for .aab). To bypass this check (e.g., you set bundleInDebug=true in app/build.gradle), pass { skipDebugBuildCheck: true } to provisionApp().',
       );
+    }
+    // .aab manifests are protobuf-encoded at a different path, so the binary
+    // XML probe can't read them — be honest that the check was skipped rather
+    // than implying a clean bill of health.
+    if (androidExt === '.aab' && probe?.debuggable !== false) {
+      log.warn(`[storybook-rn] Could not verify the debuggable flag for ${basename(localPath)} (.aab). Ensure it is a release bundle, or the cloud session may redbox.`);
     }
   }
 
@@ -312,7 +340,7 @@ export async function provisionApp(localPath, opts = {}) {
   const appUrl = await uploadWithRetry(auth, data, basename(localPath), customId, {
     retries: merged.uploadRetries,
     timeoutMs: merged.uploadTimeoutMs,
-  }, [k, u]);
+  }, [k, u, auth]);
 
   // Defensive settle — Phase 1 PoC will measure whether this is needed.
   if (merged.postUploadSettleMs > 0) {

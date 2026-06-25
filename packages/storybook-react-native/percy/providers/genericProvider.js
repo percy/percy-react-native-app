@@ -35,8 +35,25 @@ export class GenericProvider {
    * @param {object} driver  webdriverio v9 Browser
    */
   constructor(driver) {
+    this.rawDriver = driver;
     this.driver = new AppiumDriver(driver);
+    // Eager, synchronous metadata from static caps so direct construction
+    // (and the resolver tests) work without an await. `initMetadata()`
+    // upgrades this with live session caps once a session exists.
     this.metadata = MetadataResolver.resolve(driver);
+  }
+
+  /**
+   * Upgrade `this.metadata` with the live session capabilities. Under WDIO v9
+   * negotiated caps are populated post-session, so the eager static read can
+   * be empty. Call after the session is established and before reading device
+   * metadata (e.g. for snapshot naming).
+   *
+   * @returns {Promise<this>}
+   */
+  async initMetadata() {
+    this.metadata = await MetadataResolver.resolveLive(this.rawDriver);
+    return this;
   }
 
   /** @returns {'local' | 'app-automate'} */

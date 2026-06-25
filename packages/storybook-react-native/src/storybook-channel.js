@@ -56,7 +56,7 @@ export class StorybookChannelClient {
       throw err(
         'storybook_ws_unreachable',
         `Storybook channel server not reachable at ${this.baseUrl()}.`,
-        'Verify the Metro dev server is running with `withStorybook({ websockets: "auto" })` in metro.config.js.',
+        'Verify the Metro dev server is running with the withStorybook({ websockets: { host, port } }) wrapper from `storybook-rn:init` (see SETUP.md §4).',
         cause,
       );
     }
@@ -108,7 +108,7 @@ export class StorybookChannelClient {
       throw err(
         'storybook_ws_unreachable',
         `Channel server is up but WebSockets disabled (no devices to drive).`,
-        'Set `websockets: "auto"` in metro.config.js withStorybook options.',
+        'Add `enableWebsockets: true` to your getStorybookUI() options in .rnstorybook/index (see SETUP.md §4).',
       );
     }
     throw err(

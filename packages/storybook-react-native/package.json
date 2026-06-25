@@ -12,6 +12,7 @@
     "browserstack"
   ],
   "license": "MIT",
+  "author": "Perceptual Inc.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/percy/percy-react-native-app.git",
@@ -27,16 +28,25 @@
   },
   "type": "module",
   "main": "./index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./index.js"
+    },
     "./cli": "./src/index.js"
   },
   "files": [
     "index.js",
     "percy",
     "src",
+    "types",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "SETUP.md",
+    "APP_AUTOMATE.md",
+    "IOS_SIGNING.md",
+    "STORYBOOK_HOST_APP.md"
   ],
   "scripts": {
     "test": "vitest run",
@@ -78,6 +88,6 @@
     "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.19.0"
   }
 }

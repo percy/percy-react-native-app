@@ -18,10 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Node 22 is the supported floor (storybook is ESM-only; require(esm)
-        # interop landed in Node 22). 24 is the current LTS-next; keeps us
-        # ahead of customer drift.
-        node: ['22', '24']
+        # 20 is the declared engines floor (>=20.19.0 — the version where
+        # require(esm) interop was backported, which the ESM-only storybook
+        # deps need). 22 is active LTS; 24 keeps us ahead of customer drift.
+        node: ['20', '22', '24']
 
     defaults:
       run:

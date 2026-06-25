@@ -1,12 +1,123 @@
-import { describe, expect, it } from 'vitest';
-import { applyFilters, globMatch } from '../src/runner.js';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const stories = [
-  { id: 'Button/Primary', name: 'Primary', componentTitle: 'Button' },
-  { id: 'Button/Disabled', name: 'Disabled', componentTitle: 'Button' },
-  { id: 'Card/Default', name: 'Default', componentTitle: 'Card' },
-  { id: 'Card/WithImage', name: 'WithImage', componentTitle: 'Card' },
+// --- Mock the runner's collaborators so run() can be tested in isolation. ---
+const mockAppium = {
+  connect: vi.fn().mockResolvedValue(undefined),
+  getDeviceLabel: vi.fn().mockReturnValue('iOS-iPhone 15'),
+  getDeviceMetadata: vi.fn().mockResolvedValue({
+    osName: 'iOS', osVersion: '18.4', deviceName: 'iPhone 15', orientation: 'portrait',
+  }),
+  takeScreenshot: vi.fn().mockResolvedValue('BASE64PNG'),
+  disconnect: vi.fn().mockResolvedValue(undefined),
+};
+const mockChannel = {
+  baseUrl: vi.fn().mockReturnValue('http://localhost:7007'),
+  probe: vi.fn().mockResolvedValue(undefined),
+  selectAndAwaitRender: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock('../src/appium-client.js', () => ({
+  AppiumClient: vi.fn(() => mockAppium),
+}));
+vi.mock('../src/storybook-channel.js', () => ({
+  StorybookChannelClient: vi.fn(() => mockChannel),
+}));
+vi.mock('../src/comparison-poster.js', () => ({
+  postSnapshotComparison: vi.fn().mockResolvedValue(undefined),
+}));
+
+const { run, applyFilters, globMatch } = await import('../src/runner.js');
+const { postSnapshotComparison } = await import('../src/comparison-poster.js');
+
+function makeConfig(overrides = {}) {
+  return {
+    appium: { server: 'http://localhost:4723', capabilities: {} },
+    storybook: { websocketHost: 'localhost', websocketPort: 7007, waitForReadyMs: 10, settleMs: 0 },
+    include: ['**/*'],
+    skip: [],
+    ...overrides,
+  };
+}
+
+const twoStories = [
+  { id: 'example-button--primary', name: 'Primary', componentTitle: 'Example/Button' },
+  { id: 'example-card--default', name: 'Default', componentTitle: 'Example/Card' },
 ];
+
+describe('run', () => {
+  beforeEach(() => {
+    for (const fn of Object.values(mockAppium)) fn.mockClear();
+    for (const fn of Object.values(mockChannel)) fn.mockClear();
+    postSnapshotComparison.mockClear();
+    mockChannel.selectAndAwaitRender.mockResolvedValue(undefined);
+    mockAppium.takeScreenshot.mockResolvedValue('BASE64PNG');
+  });
+
+  it('selects, screenshots and posts each story, then disconnects', async () => {
+    await run({ config: makeConfig(), stories: twoStories });
+
+    expect(mockAppium.connect).toHaveBeenCalledOnce();
+    expect(mockChannel.probe).toHaveBeenCalledOnce();
+    expect(mockChannel.selectAndAwaitRender).toHaveBeenCalledTimes(2);
+    expect(postSnapshotComparison).toHaveBeenCalledTimes(2);
+    expect(mockAppium.disconnect).toHaveBeenCalledOnce();
+
+    const firstPayload = postSnapshotComparison.mock.calls[0][0];
+    expect(firstPayload.name).toBe('Example/Button/Primary/iOS-iPhone 15');
+    expect(firstPayload.device.osName).toBe('iOS');
+    expect(firstPayload.screenshotBase64).toBe('BASE64PNG');
+  });
+
+  it('throws no_stories_found when given no stories (without connecting)', async () => {
+    await expect(run({ config: makeConfig(), stories: [] }))
+      .rejects.toMatchObject({ code: 'no_stories_found' });
+    expect(mockAppium.connect).not.toHaveBeenCalled();
+  });
+
+  it('throws include_zero_match when filters exclude everything', async () => {
+    await expect(run({ config: makeConfig({ include: ['Nope/*'] }), stories: twoStories }))
+      .rejects.toMatchObject({ code: 'include_zero_match' });
+  });
+
+  it('skips a story (no stale upload) when its render is not confirmed, and continues', async () => {
+    // First story's render never confirms; second renders fine.
+    mockChannel.selectAndAwaitRender.mockRejectedValueOnce(
+      Object.assign(new Error('render timed out'), { code: 'story_render_timeout' }),
+    );
+
+    // A partial failure does NOT abort or throw — the failed story is skipped
+    // entirely (never capturing a stale frame), the rest still upload.
+    await run({ config: makeConfig(), stories: twoStories });
+
+    expect(mockAppium.takeScreenshot).toHaveBeenCalledTimes(1);
+    expect(postSnapshotComparison).toHaveBeenCalledTimes(1);
+    expect(postSnapshotComparison.mock.calls[0][0].name).toBe('Example/Card/Default/iOS-iPhone 15');
+    expect(mockAppium.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('throws all_snapshots_failed (and uploads nothing) when no story can be captured', async () => {
+    mockChannel.selectAndAwaitRender.mockRejectedValue(
+      Object.assign(new Error('render timed out'), { code: 'story_render_timeout' }),
+    );
+    await expect(run({ config: makeConfig(), stories: twoStories }))
+      .rejects.toMatchObject({ code: 'all_snapshots_failed' });
+    expect(postSnapshotComparison).not.toHaveBeenCalled();
+    expect(mockAppium.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('completes normally (no throw) when every story renders', async () => {
+    await run({ config: makeConfig(), stories: twoStories });
+    expect(postSnapshotComparison).toHaveBeenCalledTimes(2);
+  });
+
+  it('a capture/upload error on one story does not abort the rest; still disconnects', async () => {
+    mockAppium.takeScreenshot.mockRejectedValueOnce(new Error('boom'));
+    // story 1 capture throws (caught + skipped), story 2 still captured.
+    await run({ config: makeConfig(), stories: twoStories });
+    expect(postSnapshotComparison).toHaveBeenCalledTimes(1);
+    expect(mockAppium.disconnect).toHaveBeenCalledOnce();
+  });
+});
 
 describe('globMatch', () => {
   it('matches everything for `**/*` and `**`', () => {
@@ -34,6 +145,13 @@ describe('globMatch', () => {
 });
 
 describe('applyFilters', () => {
+  const stories = [
+    { id: 'Button/Primary', name: 'Primary', componentTitle: 'Button' },
+    { id: 'Button/Disabled', name: 'Disabled', componentTitle: 'Button' },
+    { id: 'Card/Default', name: 'Default', componentTitle: 'Card' },
+    { id: 'Card/WithImage', name: 'WithImage', componentTitle: 'Card' },
+  ];
+
   it('returns all stories when include is `**/*`', () => {
     expect(applyFilters(stories, ['**/*'], [])).toHaveLength(4);
   });

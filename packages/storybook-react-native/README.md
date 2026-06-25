@@ -45,7 +45,8 @@ percy exec -- npx percy storybook-rn       # snapshot + upload
 | `npx percy storybook-rn` | Auto-discover stories, capture each on the connected device, upload. |
 | `npx percy storybook-rn --dry-run` | List discovered stories without uploading. |
 | `npx percy storybook-rn --stories "id1,id2"` | Explicit story IDs (overrides auto-discovery). |
-| `npx percy storybook-rn --include="Button/*"` | Glob filter on story IDs. |
+| `npx percy storybook-rn --include="Button/*,Card/*"` | Comma-separated glob filter on story IDs. |
+| `npx percy storybook-rn --exclude="*--skip"` | Comma-separated glob patterns to skip. |
 | `npx percy storybook-rn:doctor` | Local-only preflight checks (no upload). |
 | `npx @percy/cli storybook-rn:init` | Scaffold `.percy.yml` + `metro.config.js` + print next steps. |
 
@@ -67,6 +68,23 @@ percy exec -- npx percy storybook-rn       # snapshot + upload
 | `src/commands/storybook-rn.js` | Primary CLI command |
 | `src/commands/doctor.js` | Preflight checks |
 | `src/commands/init.js` | Scaffolding |
+
+## Two modes
+
+This package ships two ways to drive snapshots:
+
+- **CLI mode** (documented above) — drives a local Appium server against an iOS
+  Simulator / Android emulator via the Storybook RN channel. Files live in `src/`.
+- **Library mode** — for running on **BrowserStack App Automate** real devices
+  from your own Appium driver script. Import from the package entry point:
+
+  ```js
+  import percyStorybookSnapshot, { discoverStories, provisionApp, runSession } from '@percy/storybook-react-native';
+  ```
+
+  Library mode requires `@percy/appium-app` (a peer dependency) and delegates the
+  actual screenshot/upload to it. See **[APP_AUTOMATE.md](./APP_AUTOMATE.md)** for
+  the full walkthrough. Files live in `percy/`.
 
 ## Reference example
 

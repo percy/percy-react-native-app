@@ -28,19 +28,28 @@ describe('postSnapshotComparison', () => {
     utils.postComparison.mockClear();
   });
 
-  it('extracts width/height from PNG and places them on tag', async () => {
+  const iosDevice = { osName: 'iOS', osVersion: '18.4', deviceName: 'iPhone 15', orientation: 'portrait' };
+
+  it('builds the full App-Percy tag from device metadata and PNG dimensions', async () => {
     const png = makePng(390, 844);
     await postSnapshotComparison({
       name: 'Button/Primary/iOS-iPhone-15',
       tag: 'iOS-iPhone-15',
+      device: iosDevice,
+      environmentInfo: 'webdriverio/9.0.0',
       screenshotBase64: png.toString('base64'),
     });
     expect(utils.postComparison).toHaveBeenCalledOnce();
     const payload = utils.postComparison.mock.calls[0][0];
     expect(payload.name).toBe('Button/Primary/iOS-iPhone-15');
+    expect(payload.clientInfo).toMatch(/^@percy\/storybook-react-native\//);
+    expect(payload.environmentInfo).toBe('webdriverio/9.0.0');
     expect(payload.tag).toEqual({
       name: 'iOS-iPhone-15',
       osName: 'iOS',
+      osVersion: '18.4',
+      deviceName: 'iPhone 15',
+      orientation: 'portrait',
       width: 390,
       height: 844,
     });
@@ -49,26 +58,29 @@ describe('postSnapshotComparison', () => {
     expect(payload.tiles[0].fullscreen).toBe(false);
   });
 
-  it('uses the provided osName on the tag (Android)', async () => {
+  it('tags Android runs with the real platform, not a hard-coded iOS', async () => {
     const png = makePng(1080, 2400);
     await postSnapshotComparison({
       name: 'Button/Primary/Android-Pixel-7',
       tag: 'Android-Pixel-7',
-      osName: 'Android',
+      device: { osName: 'Android', osVersion: '14', deviceName: 'Pixel 7', orientation: 'portrait' },
       screenshotBase64: png.toString('base64'),
     });
     const payload = utils.postComparison.mock.calls[0][0];
     expect(payload.tag.osName).toBe('Android');
+    expect(payload.tag.osVersion).toBe('14');
   });
 
-  it('defaults osName to iOS when not provided', async () => {
-    const png = makePng(390, 844);
-    await postSnapshotComparison({
-      name: 'X',
-      tag: 'iOS-iPhone-15',
-      screenshotBase64: png.toString('base64'),
-    });
-    expect(utils.postComparison.mock.calls[0][0].tag.osName).toBe('iOS');
+  it('throws when device metadata is missing osName', async () => {
+    const png = makePng(100, 100);
+    await expect(
+      postSnapshotComparison({
+        name: 'X',
+        tag: 'iOS',
+        device: {},
+        screenshotBase64: png.toString('base64'),
+      }),
+    ).rejects.toThrow(/osName/);
   });
 
   it('throws when buffer is not a PNG', async () => {
@@ -77,6 +89,7 @@ describe('postSnapshotComparison', () => {
       postSnapshotComparison({
         name: 'X',
         tag: 'iOS',
+        device: iosDevice,
         screenshotBase64: notPng.toString('base64'),
       }),
     ).rejects.toThrow(/not a PNG/);
@@ -87,6 +100,7 @@ describe('postSnapshotComparison', () => {
       postSnapshotComparison({
         name: 'X',
         tag: 'iOS',
+        device: iosDevice,
         screenshotBase64: Buffer.from('tiny').toString('base64'),
       }),
     ).rejects.toThrow(/too small/);
@@ -99,6 +113,7 @@ describe('postSnapshotComparison', () => {
       postSnapshotComparison({
         name: 'X',
         tag: 'iOS',
+        device: iosDevice,
         screenshotBase64: png.toString('base64'),
       }),
     ).rejects.toThrow(/Percy CLI is not running/);

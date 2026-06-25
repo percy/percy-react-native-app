@@ -208,7 +208,22 @@ async function buildIosSimulator(projectPath, projectType, timeoutMs) {
 
   // Find workspace/project under ios/.
   const iosDir = path.join(projectPath, 'ios');
-  const entries = await fs.readdir(iosDir);
+  let entries;
+  try {
+    entries = await fs.readdir(iosDir);
+  } catch (cause) {
+    // Bare RN with no ios/ dir would otherwise throw a raw Node ENOENT,
+    // breaking the typed-error contract. Map it to the documented code.
+    if (/** @type {{ code?: string }} */ (cause)?.code === 'ENOENT') {
+      throw err(
+        'build_artifact_not_found',
+        `No ios/ directory found at ${iosDir}.`,
+        'For Expo, run `npx expo prebuild --platform ios`; for bare RN, ensure the iOS project is initialized.',
+        cause,
+      );
+    }
+    throw cause;
+  }
   const workspace = entries.find((e) => e.endsWith('.xcworkspace'));
   const project = entries.find((e) => e.endsWith('.xcodeproj'));
   if (!workspace && !project) {
@@ -284,7 +299,13 @@ function runCommand(cmd, args, opts) {
     });
 
     const timer = setTimeout(() => {
+      // SIGTERM first, then escalate to SIGKILL if the process is still alive
+      // after a grace period. A gradle daemon (or any child ignoring SIGTERM)
+      // would otherwise survive as an orphan holding the emulator/ports.
       child.kill('SIGTERM');
+      const escalate = setTimeout(() => child.kill('SIGKILL'), 5000);
+      escalate.unref?.();
+      child.once('exit', () => clearTimeout(escalate));
       reject(
         err(
           'build_failed',
