@@ -231,6 +231,10 @@ function matchSegList(parts, segs) {
  */
 function segWildcardMatch(pattern, input) {
   if (!pattern.includes('*')) return pattern === input;
+  // `pattern` is an operator-supplied glob (not attacker input) and regex
+  // metacharacters are escaped below before templating, so this dynamic
+  // RegExp is not an injection/ReDoS vector.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const re = new RegExp(
     '^' +
       pattern
@@ -277,6 +281,10 @@ export function extractTitle(src) {
   const m = src.match(/(?:const|let|var)\s+(\w+)\s*=\s*\{[\s\S]*?\btitle\s*:\s*['"`]([^'"`]+)['"`]/);
   if (m) {
     const ident = m[1];
+    // `ident` is captured by `(\w+)` above, so it is provably [A-Za-z0-9_]
+    // only — it cannot contain regex metacharacters, so interpolating it is
+    // safe (no injection/ReDoS).
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     if (new RegExp(`export\\s+default\\s+${ident}\\b`).test(src)) {
       return m[2];
     }
