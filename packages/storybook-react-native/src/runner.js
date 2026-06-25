@@ -163,6 +163,10 @@ export function applyFilters(stories, include, skip) {
  */
 export function globMatch(pattern, input) {
   if (pattern === '**/*' || pattern === '**') return true;
+  // `pattern` is an operator-supplied .percy.yml include/skip glob (not
+  // attacker input), and every regex metacharacter is escaped below before
+  // templating, so this dynamic RegExp is not an injection/ReDoS vector.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const re = new RegExp(
     '^' +
       pattern
