@@ -81,11 +81,11 @@
   "devDependencies": {
     "@percy/appium-app": "~2.1.0",
     "@percy/cli": "^1.31.12",
-    "@vitest/coverage-v8": "^2.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "appium": "^2.19.0",
     "appium-xcuitest-driver": "^8.4.3",
     "eslint": "^9.10.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.9"
   },
   "engines": {
     "node": ">=20.19.0"
