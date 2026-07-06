@@ -1,6 +1,6 @@
 {
   "name": "@percy/storybook-react-native",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0",
   "description": "Percy SDK for visual testing of React Native Storybook components via Appium. Supports local emulator/simulator (CLI mode) and BrowserStack App Automate (library mode).",
   "keywords": [
     "percy",
@@ -24,7 +24,7 @@
   "homepage": "https://github.com/percy/percy-react-native-app/tree/main/packages/storybook-react-native#readme",
   "publishConfig": {
     "access": "public",
-    "tag": "beta"
+    "tag": "latest"
   },
   "type": "module",
   "main": "./index.js",
