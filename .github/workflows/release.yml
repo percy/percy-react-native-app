@@ -57,6 +57,22 @@ jobs:
             exit 1
           fi
 
+      # The v0.1.0-beta.0 release died with `404 on PUT` — npm's masked
+      # "token may not create/publish this package". Surface the token's
+      # identity and @percy visibility BEFORE building, so an auth problem
+      # fails in seconds with a readable message instead of a misleading 404.
+      - name: Verify npm token can publish to @percy
+        run: |
+          echo "Token belongs to npm user: $(npm whoami)"
+          if npm access list packages @percy > /dev/null 2>&1; then
+            echo "Token's account can see @percy org packages."
+          else
+            echo "::error::This token's npm account cannot access the @percy org — publish will 404. Mint an Automation token from an account with @percy publish rights and update the NPM_TOKEN secret."
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
         run: npm publish --provenance
         env:
