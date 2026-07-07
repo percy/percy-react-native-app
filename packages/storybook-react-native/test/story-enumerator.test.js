@@ -160,6 +160,54 @@ describe('enumerateStories', () => {
     await expect(enumerateStories(tmp)).rejects.toThrow(/no .stories files matched/);
   });
 
+  it('discovers stories outside the config dir via ../ globs (default RN scaffold)', async () => {
+    // `npx storybook init --type react_native` writes main.ts with
+    // stories: ['../components/**/*.stories.?(ts|tsx|js|jsx)'] — the story
+    // sources live *next to* .rnstorybook, not inside it.
+    const rb = path.join(tmp, '.rnstorybook');
+    const components = path.join(tmp, 'components');
+    await fs.mkdir(rb, { recursive: true });
+    await fs.mkdir(components, { recursive: true });
+    await fs.writeFile(
+      path.join(rb, 'main.ts'),
+      `
+        import type { StorybookConfig } from '@storybook/react-native';
+        const main: StorybookConfig = {
+          stories: ['../components/**/*.stories.?(ts|tsx|js|jsx)'],
+          addons: [],
+        };
+        export default main;
+      `,
+    );
+    await fs.writeFile(
+      path.join(components, 'Button.stories.tsx'),
+      `
+        export default { title: 'Example/Button' };
+        export const Primary = { args: {} };
+      `,
+    );
+    const stories = await enumerateStories(tmp);
+    expect(stories.map((s) => s.id)).toEqual(['example-button--primary']);
+  });
+
+  it('treats a leading ./ segment list equivalently after ../ consumption', async () => {
+    // `../.rnstorybook/stories/**` style — ../ back into the config dir.
+    const rb = path.join(tmp, '.rnstorybook');
+    const stories = path.join(rb, 'stories');
+    await fs.mkdir(stories, { recursive: true });
+    await fs.writeFile(
+      path.join(rb, 'main.ts'),
+      `const main = { stories: ['../.rnstorybook/stories/**/*.stories.tsx'] }; export default main;`,
+    );
+    await fs.writeFile(
+      path.join(stories, 'Card.stories.tsx'),
+      `export default { title: 'Example/Card' };
+       export const Basic = { args: {} };`,
+    );
+    const found = await enumerateStories(tmp);
+    expect(found.map((s) => s.id)).toEqual(['example-card--basic']);
+  });
+
   it('skips node_modules during walk', async () => {
     await setupFixture();
     // Plant a decoy story under node_modules — should NOT be picked up
