@@ -256,7 +256,7 @@ Issues? File at https://github.com/percy/percy-react-native-app/issues.
 
 ## Library mode (BrowserStack App Automate)
 
-Everything above describes **CLI mode** — the `npx percy storybook-rn` command driving a local emulator/simulator. As of v0.2.0, `@percy/storybook-react-native` also ships a **library mode** that runs against BrowserStack App Automate from inside your existing WebdriverIO Appium tests.
+Everything above describes **CLI mode** — the `npx percy storybook-rn` command driving a local emulator/simulator. As of v0.1.0, `@percy/storybook-react-native` also ships a **library mode** that runs against BrowserStack App Automate from inside your existing WebdriverIO Appium tests.
 
 **When to pick which:**
 
@@ -268,3 +268,53 @@ Everything above describes **CLI mode** — the `npx percy storybook-rn` command
 | Storybook host app | Local debug build | Storybook-enabled `.apk` uploaded to BS |
 
 For library-mode setup, see **[`APP_AUTOMATE.md`](./APP_AUTOMATE.md)** and the reference repo at [`percy/example-percy-storybook-react-native`](https://github.com/percy/example-percy-storybook-react-native) (separate repo, mirrors the [`example-percy-appium-js`](https://github.com/percy/example-percy-appium-js) layout).
+
+---
+
+## Full config reference
+
+Everything the SDK reads, in one place.
+
+### `.percy.yml` → `storybook-rn:` (CLI mode)
+
+```yaml
+version: 2
+storybook-rn:
+  appium:
+    server: http://localhost:4723   # Appium server URL (http/https only)
+    capabilities: {}                # merged over the SDK's platform defaults
+  storybook:
+    websocketHost: localhost        # Storybook RN channel server host
+    websocketPort: 7007             # channel server port
+    waitForReadyMs: 4000            # backstop wait for the device render-ack
+    settleMs: 250                   # post-render settle before the screenshot
+  include: ['**/*']                 # story-id globs to keep
+  skip: []                          # story-id globs to drop (wins over include)
+```
+
+| Key | Default | Notes |
+|---|---|---|
+| `appium.server` | `http://localhost:4723` | Must parse as an `http:`/`https:` URL or the run fails fast with `invalid_config`. |
+| `appium.capabilities` | `{}` | Deep-merged over the SDK's per-platform defaults; set `platformName` here. |
+| `storybook.websocketHost` | `localhost` | Pin to `127.0.0.1` on macOS to avoid the IPv6 mismatch ([§7.1](#71-ipv4-vs-ipv6-localhost-mismatch-on-macos)). |
+| `storybook.websocketPort` | `7007` | Storybook RN channel server port. |
+| `storybook.waitForReadyMs` | `4000` | Raise for stories with slow data/image loads. |
+| `storybook.settleMs` | `250` | Extra delay after render-ack for animations/image decode. |
+| `include` / `skip` | `['**/*']` / `[]` | Globs matched against story ids (`example-button--primary`). CLI `--include`/`--skip` override. |
+
+CLI flags `--stories`, `--include`, `--dry-run` override the file config per run.
+
+### Environment variables
+
+| Variable | Mode | Purpose |
+|---|---|---|
+| `PERCY_TOKEN` | both | App-type project token (`app_...`). |
+| `BROWSERSTACK_USERNAME` / `BROWSERSTACK_ACCESS_KEY` | library | App Automate auth for `provisionApp` and the driver session. |
+| `PERCY_APP_URL` | library | `bs://...` reference returned by `provisionApp`. |
+| `PERCY_RN_PROJECT_DIR` | library | RN project root for story discovery (where `.rnstorybook/` lives). |
+| `PERCY_APP_SCHEME` / `PERCY_APP_PACKAGE` | library | URL scheme + Android package id, needed only for `navigationStrategy: 'deeplink'`. |
+| `DEBUG=1` | both | Verbose per-story logging. |
+
+### Per-snapshot options (library mode)
+
+Passed as the third argument to `percyStorybookSnapshot(driver, story, options)`; see the ["Snapshot options" table in APP_AUTOMATE.md](./APP_AUTOMATE.md#snapshot-options-flat-surface) for the full flat surface (`navigationStrategy`, `appScheme`, `appPackage`, `coldBootMaxMs`, `globalNavigationBudgetMs`, `fullPage`, ...).
