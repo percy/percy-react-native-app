@@ -104,6 +104,29 @@ Build:
 STORYBOOK=true npx react-native build-android --mode=debug
 ```
 
+## On-device addon native dependencies
+
+The default `storybook init --type react_native` scaffold registers
+`@storybook/addon-ondevice-controls`, which imports the
+`@react-native-community/datetimepicker` and `@react-native-community/slider`
+**native** modules at bundle time. Autolinking only links your app's *direct*
+dependencies, so if they're missing from your `package.json` the release build
+succeeds but the app crash-loops on launch with:
+
+```
+TurboModuleRegistry.getEnforcing(...): 'RNCDatePicker' could not be found
+```
+
+Install them as app dependencies before building the host `.apk`:
+
+```bash
+npx expo install @react-native-community/datetimepicker @react-native-community/slider
+# bare RN: npm install @react-native-community/datetimepicker @react-native-community/slider
+```
+
+(Or drop `addon-ondevice-controls` from `.rnstorybook/main.ts` if you don't
+use controls — Percy only needs stories to render.)
+
 ## Verifying
 
 Install the resulting `.apk` on a local emulator:
