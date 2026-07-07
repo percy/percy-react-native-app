@@ -156,6 +156,31 @@ For customers with their own upload pipeline, `useAppReference('bs://...')` is t
 | `nav_element_not_found` | A specific story's component group or leaf wasn't tappable | Verify the component title and story name match the on-device sidebar exactly. CSF titles with escaped slashes need explicit unescaping. |
 | `nav_render_timeout` | Story rendered but the screenshot-stability poll never converged within 8s | Likely a permanent animation. Set `freezeAnimatedImage: false` is not the answer (it's already on by default); use `parameters.percy.waitFor` per story instead. |
 | `app_cold_boot_timeout` | Cold-boot poll exceeded 30s | Slow BS device; bump `coldBootMaxMs` via options. |
+| `bs_app_reference_stale` | The `bs://` reference points to an app upload that BrowserStack no longer has (uploads expire after ~30 days) | Re-run `provisionApp` (or your upload step) to get a fresh `bs://` URL. |
+| `bs_quota_exhausted` | Your BrowserStack plan's App Automate parallel/session quota is used up | Wait for running sessions to finish, or raise the plan limit. |
+| `invalid_app_reference` | App reference doesn't start with `bs://` | Pass the `bs://` URL returned by `provisionApp()` or your own upload script — not a local file path. |
+| `build_is_debug_variant` | The uploaded app is a debug build (`android:debuggable="true"`), which expects Metro on `localhost:8081` and redboxes on a cloud device | Build the release variant (`./gradlew assembleRelease`), which embeds the JS bundle. |
+| `build_failed` | The SDK-driven gradle/EAS build command exited non-zero | Read the build output above the error; fix the native build failure and re-run. |
+| `build_toolchain_missing` | The build command isn't available on this machine (gradle wrapper, Xcode, or EAS CLI not found) | Install the missing toolchain, or build the artifact yourself and pass its path to `provisionApp`. |
+| `build_artifact_not_found` | Build succeeded but no `.apk` at the expected output path | Custom flavors/output paths — locate the artifact and pass it to `provisionApp` directly. |
+| `apple_signing_required` | iOS on App Automate needs a distribution-signed `.ipa`, which the SDK can't produce for you | Follow [IOS_SIGNING.md](./IOS_SIGNING.md), then `provisionApp('./MyApp.ipa')`. |
+| `unsupported_project_type` | Project path is neither an Expo nor bare React Native root | Pass the RN project root (the directory whose `package.json` lists `react-native`). |
+| `unsupported_platform` | The Appium session's platform isn't Android or iOS | Set `platformName` to `Android` or `iOS` in your capabilities. |
+| `deep_link_unsupported_platform` | Deep-link navigation didn't settle in time on this platform | Verify the URL scheme is registered; or drop `navigationStrategy: 'deeplink'` to use the default UI-tap path. |
+| `url_scheme_silent_failure` | The deep link was sent but the app never surfaced the story (scheme registered to nothing, or swallowed) | Check the scheme in `app.json` / `AndroidManifest.xml` / `Info.plist` matches `appScheme` exactly. |
+| `nav_state_diverged` | The on-device navigator ended up somewhere other than the requested story | Usually a duplicate story title — make CSF `title` + export names unique across the project. |
+| `no_stories_found` | Story discovery found a `.rnstorybook` config but no `.stories.*` files matched its glob (or no config at all) | Check the `stories:` glob in `.rnstorybook/main.ts`, set `PERCY_RN_PROJECT_DIR` to the project root, or pass `--stories` explicitly. |
+| `include_zero_match` | `include`/`skip` patterns filtered out every discovered story | Loosen the `include`/`skip` globs in `.percy.yml`. |
+| `invalid_descriptor` | Appium session has no `platformName` capability | Set `platformName` (iOS or Android) in `.percy.yml` `appium.capabilities`. |
+| `invalid_config` | A `.percy.yml` `storybook-rn:` value failed validation (e.g. `appium.server` not an http(s) URL) | Fix the value named in the message — e.g. `appium.server: http://localhost:4723`. |
+| `appium_unreachable` | No Appium session — `connect()` was never called or the server is down | Start the Appium server / check `appium.server`; in library mode, pass a live driver. |
+| `percy_appium_app_missing` | `@percy/appium-app` peer dependency isn't installed | `npm install --save-dev @percy/appium-app`. |
+| `percy_cli_unreachable` | Percy CLI server isn't running (command not wrapped in `percy exec` / `percy app:exec`) | Wrap the run: `npx percy app:exec -- <command>`, with `PERCY_TOKEN` set. |
+| `token_missing` | `PERCY_TOKEN` isn't set | Export the app-type project token (starts with `app_`) from your Percy project settings. |
+| `screenshot_failed` | Appium screenshot capture failed mid-run | Device lost focus or session expired — check the App Automate session video; re-run with `DEBUG=1`. |
+| `story_render_timeout` | The channel/select-story call errored or the story never acked render | Local mode: confirm Metro is running and the device is connected. Bump `storybook.waitForReadyMs` for slow stories. |
+| `storybook_ws_unreachable` | Storybook's channel server is up but WebSockets are disabled | Add `enableWebsockets: true` to `getStorybookUI()` in `.rnstorybook/index` (see SETUP.md §4). |
+| `all_snapshots_failed` | Every story in the run failed to capture | Read the per-story errors above; re-run with `DEBUG=1` for full detail. |
 
 ## Performance defaults
 

@@ -146,9 +146,17 @@ async function walkGlob(root, glob) {
   });
   // Now pattern looks like: stories/**/*.stories
   const segments = pattern.split('/');
-  const allFiles = await walkDir(root);
+  // Storybook globs are relative to the config dir, and the default RN
+  // scaffold points *outside* it (`../components/**`) — consume leading
+  // `..`/`.` segments by moving the walk root instead of matching them.
+  let base = root;
+  while (segments.length > 0 && (segments[0] === '..' || segments[0] === '.')) {
+    if (segments[0] === '..') base = path.dirname(base);
+    segments.shift();
+  }
+  const allFiles = await walkDir(base);
   return allFiles.filter((file) => {
-    const rel = path.relative(root, file).split(path.sep).join('/');
+    const rel = path.relative(base, file).split(path.sep).join('/');
     return matchesSegments(rel, segments, exts);
   });
 }
