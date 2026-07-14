@@ -8,7 +8,9 @@ on:
 # matching packages/storybook-react-native/package.json `version`, target main,
 # fill in notes, click "Publish release". This workflow then:
 #   1. Re-runs lint + tests (defence in depth against shipping broken code).
-#   2. Runs `npm publish` with provenance.
+#   2. Runs `npm publish` (plain, no provenance — matching percy/cli and
+#      percy/percy-playwright; provenance adds an id-token requirement and a
+#      repository.url validation that the sibling repos don't carry).
 #
 # Requires the `NPM_TOKEN` secret to be set on the repo (Automation token,
 # scope: @percy + 2FA-bypass-for-CI). The npm dist-tag is read from
@@ -19,9 +21,7 @@ jobs:
     name: Publish @percy/storybook-react-native
     runs-on: ubuntu-latest
     permissions:
-      # Required for npm provenance attestations.
       contents: read
-      id-token: write
 
     defaults:
       run:
@@ -57,7 +57,23 @@ jobs:
             exit 1
           fi
 
+      # The v0.1.0-beta.0 release died with `404 on PUT` — npm's masked
+      # "token may not create/publish this package". Surface the token's
+      # identity and @percy visibility BEFORE building, so an auth problem
+      # fails in seconds with a readable message instead of a misleading 404.
+      - name: Verify npm token can publish to @percy
+        run: |
+          echo "Token belongs to npm user: $(npm whoami)"
+          if npm access list packages @percy > /dev/null 2>&1; then
+            echo "Token's account can see @percy org packages."
+          else
+            echo "::error::This token's npm account cannot access the @percy org — publish will 404. Mint an Automation token from an account with @percy publish rights and update the NPM_TOKEN secret."
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
