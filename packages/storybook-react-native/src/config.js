@@ -1,4 +1,13 @@
 import { err } from './errors.js';
+import { log } from '../percy/util/log.js';
+
+const LOOPBACK_HOSTS = new Set(['localhost', '[::1]']);
+
+/** @param {string} server */
+export function isPlaintextRemoteServer(server) {
+  const u = new URL(server);
+  return u.protocol === 'http:' && !LOOPBACK_HOSTS.has(u.hostname) && !/^127\./.test(u.hostname);
+}
 
 /**
  * `.percy.yml` schema under the `storybook-rn:` key.
@@ -85,6 +94,13 @@ function assertValidConfig(cfg) {
       'invalid_config',
       `storybook-rn.appium.server must be an http(s) URL, got "${cfg.appium.server}".`,
       'Set it to e.g. http://localhost:4723.',
+    );
+  }
+  if (isPlaintextRemoteServer(cfg.appium.server)) {
+    const u = new URL(cfg.appium.server);
+    // Log protocol//host only: the raw URL may carry user:key@ userinfo.
+    log.warn(
+      `appium.server uses plaintext http:// to a non-local host (${u.protocol}//${u.host}); capabilities such as credentials are sent unencrypted. Use https://.`,
     );
   }
 

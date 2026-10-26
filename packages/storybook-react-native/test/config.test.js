@@ -1,5 +1,35 @@
-import { describe, expect, it } from 'vitest';
-import { mergeConfig, DEFAULT_CONFIG } from '../src/config.js';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { mergeConfig, DEFAULT_CONFIG, isPlaintextRemoteServer } from '../src/config.js';
+import { log } from '../percy/util/log.js';
+
+describe('plaintext appium.server warning (PER-9350)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('warns once for http:// to a remote host without leaking userinfo', () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    mergeConfig({ appium: { server: 'http://user:secretkey@hub.example.com/wd/hub' } });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('http://hub.example.com');
+    expect(warn.mock.calls[0][0]).not.toContain('secretkey');
+  });
+
+  it.each([
+    'http://localhost:4723',
+    'http://127.0.0.1:4723',
+    'http://[::1]:4723',
+    'https://hub.browserstack.com/wd/hub',
+  ])('stays silent for %s', (server) => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    mergeConfig({ appium: { server } });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('isPlaintextRemoteServer classifies hosts', () => {
+    expect(isPlaintextRemoteServer('http://hub.example.com')).toBe(true);
+    expect(isPlaintextRemoteServer('https://hub.example.com')).toBe(false);
+    expect(isPlaintextRemoteServer('http://localhost:4723')).toBe(false);
+  });
+});
 
 describe('mergeConfig', () => {
   it('returns defaults when no partial config is passed', () => {
