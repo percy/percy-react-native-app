@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { performance } from 'node:perf_hooks';
 
 // --- Mock the runner's collaborators so run() can be tested in isolation. ---
 const mockAppium = {
@@ -120,6 +121,48 @@ describe('run', () => {
 });
 
 describe('globMatch', () => {
+  it('does not backtrack catastrophically on adjacent `**` runs (PER-9343)', () => {
+    const t0 = performance.now();
+    expect(globMatch('*'.repeat(28) + 'z', 'a'.repeat(25))).toBe(false);
+    expect(globMatch(Array(8).fill('**').join('/') + '/zz', 'a/'.repeat(40))).toBe(false);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+
+  it('keeps legacy regex quirks and SyntaxErrors', () => {
+    expect(globMatch('a?b', 'b')).toBe(true);
+    expect(globMatch('***', 'x/y')).toBe(true);
+    expect(globMatch('Btn/*', 'Btn/\n')).toBe(true);
+    expect(globMatch('Btn/**', 'Btn/\n')).toBe(false);
+    expect(() => globMatch('a???', 'a')).toThrow(SyntaxError);
+  });
+
+  it('agrees with the legacy regex implementation on seeded random cases', () => {
+    const legacy = (p, s) =>
+      new RegExp(
+        '^' +
+          p
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*\*/g, '__DOUBLESTAR__')
+            .replace(/\*/g, '[^/]*')
+            .replace(/__DOUBLESTAR__/g, '.*') +
+          '$',
+      ).test(s);
+    const alphabet = ['a', 'b', '/', '*', '-', '.', '?', '\n'];
+    let seed = 42;
+    const rand = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
+    const word = (max) => Array.from({ length: rand(max) }, () => alphabet[rand(alphabet.length)]).join('');
+    for (let i = 0; i < 2000; i++) {
+      const p = word(8);
+      const s = word(10);
+      if (p === '**/*' || p === '**') continue;
+      let expected;
+      try { expected = legacy(p, s); } catch { expected = 'throws'; }
+      let actual;
+      try { actual = globMatch(p, s); } catch { actual = 'throws'; }
+      expect(actual, JSON.stringify([p, s])).toBe(expected);
+    }
+  });
+
   it('matches everything for `**/*` and `**`', () => {
     expect(globMatch('**/*', 'Button/Primary')).toBe(true);
     expect(globMatch('**', 'Card/Default')).toBe(true);
