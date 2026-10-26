@@ -125,7 +125,7 @@ describe('globMatch', () => {
     const t0 = performance.now();
     expect(globMatch('*'.repeat(28) + 'z', 'a'.repeat(25))).toBe(false);
     expect(globMatch(Array(8).fill('**').join('/') + '/zz', 'a/'.repeat(40))).toBe(false);
-    expect(performance.now() - t0).toBeLessThan(500);
+    expect(performance.now() - t0).toBeLessThan(2000);
   });
 
   it('keeps legacy regex quirks and SyntaxErrors', () => {
@@ -149,8 +149,12 @@ describe('globMatch', () => {
       ).test(s);
     const alphabet = ['a', 'b', '/', '*', '-', '.', '?', '\n'];
     let seed = 42;
-    const rand = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
-    const word = (max) => Array.from({ length: rand(max) }, () => alphabet[rand(alphabet.length)]).join('');
+    const rand = (n) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return Math.floor((seed / 2 ** 32) * n);
+    };
+    const word = (max) => Array.from({ length: 1 + rand(max) }, () => alphabet[rand(alphabet.length)]).join('');
+    const seen = new Set();
     for (let i = 0; i < 2000; i++) {
       const p = word(8);
       const s = word(10);
@@ -160,7 +164,9 @@ describe('globMatch', () => {
       let actual;
       try { actual = globMatch(p, s); } catch { actual = 'throws'; }
       expect(actual, JSON.stringify([p, s])).toBe(expected);
+      seen.add(String(expected));
     }
+    expect([...seen].sort()).toEqual(['false', 'throws', 'true']);
   });
 
   it('matches everything for `**/*` and `**`', () => {

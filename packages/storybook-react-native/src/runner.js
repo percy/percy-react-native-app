@@ -161,6 +161,8 @@ export function applyFilters(stories, include, skip) {
  * @param {string} pattern
  * @param {string} input
  */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
 export function globMatch(pattern, input) {
   if (pattern === '**/*' || pattern === '**') return true;
   const toks = compileGlob(pattern);
@@ -193,8 +195,6 @@ export function globMatch(pattern, input) {
   }
   return cur.has(n);
 }
-
-const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
 
 // Tokenise the legacy glob->regex source so it can run on a linear NFA.
 function compileGlob(pattern) {

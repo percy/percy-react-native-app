@@ -6,7 +6,7 @@ const LOOPBACK_HOSTS = new Set(['localhost', '[::1]']);
 /** @param {string} server */
 export function isPlaintextRemoteServer(server) {
   const u = new URL(server);
-  return u.protocol === 'http:' && !LOOPBACK_HOSTS.has(u.hostname) && !/^127\./.test(u.hostname);
+  return u.protocol === 'http:' && !LOOPBACK_HOSTS.has(u.hostname) && !/^127(\.\d{1,3}){3}$/.test(u.hostname);
 }
 
 /**

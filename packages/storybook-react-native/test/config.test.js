@@ -28,6 +28,7 @@ describe('plaintext appium.server warning (PER-9350)', () => {
     expect(isPlaintextRemoteServer('http://hub.example.com')).toBe(true);
     expect(isPlaintextRemoteServer('https://hub.example.com')).toBe(false);
     expect(isPlaintextRemoteServer('http://localhost:4723')).toBe(false);
+    expect(isPlaintextRemoteServer('http://127.evil.example')).toBe(true);
   });
 });
 
