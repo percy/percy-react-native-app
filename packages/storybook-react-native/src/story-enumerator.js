@@ -282,22 +282,29 @@ async function parseStoryFile(file) {
  */
 export function extractTitle(src) {
   // Direct: export default { ..., title: '...', ... }
-  const direct = src.match(/export\s+default\s*\{[\s\S]*?\btitle\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (direct) return direct[1];
+  const d = /export\s+default\s*\{/.exec(src);
+  if (d) {
+    const t = titleAfter(src, d.index + d[0].length);
+    if (t !== null) return t;
+  }
   // Indirect: const meta = { ..., title: '...', ... } satisfies Meta
   //           export default meta;
-  const m = src.match(/(?:const|let|var)\s+(\w+)\s*=\s*\{[\s\S]*?\btitle\s*:\s*['"`]([^'"`]+)['"`]/);
+  const m = /(?:const|let|var)\s+(\w+)\s*=\s*\{/.exec(src);
   if (m) {
-    const ident = m[1];
-    // `ident` is captured by `(\w+)` above, so it is provably [A-Za-z0-9_]
-    // only — it cannot contain regex metacharacters, so interpolating it is
-    // safe (no injection/ReDoS).
+    const t = titleAfter(src, m.index + m[0].length);
+    // `m[1]` is `\w+`, so it has no regex metacharacters.
     // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-    if (new RegExp(`export\\s+default\\s+${ident}\\b`).test(src)) {
-      return m[2];
-    }
+    if (t !== null && new RegExp(`export\\s+default\\s+${m[1]}\\b`).test(src)) return t;
   }
   return null;
+}
+
+// First `title: '...'` at or after `from`; one scan per prefix keeps this linear.
+function titleAfter(src, from) {
+  const re = /\btitle\s*:\s*['"`]([^'"`]+)['"`]/g;
+  re.lastIndex = from;
+  const t = re.exec(src);
+  return t ? t[1] : null;
 }
 
 /**
