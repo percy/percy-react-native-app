@@ -161,22 +161,75 @@ export function applyFilters(stories, include, skip) {
  * @param {string} pattern
  * @param {string} input
  */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
 export function globMatch(pattern, input) {
   if (pattern === '**/*' || pattern === '**') return true;
-  // `pattern` is an operator-supplied .percy.yml include/skip glob (not
-  // attacker input), and every regex metacharacter is escaped below before
-  // templating, so this dynamic RegExp is not an injection/ReDoS vector.
+  const toks = compileGlob(pattern);
+  const n = toks.length;
+  // Zero-width moves: a star or optional atom may match nothing.
+  const close = (set) => {
+    const stack = [...set];
+    while (stack.length) {
+      const i = stack.pop();
+      if (i < n && (toks[i].k !== 'lit' || toks[i].opt) && !set.has(i + 1)) {
+        set.add(i + 1);
+        stack.push(i + 1);
+      }
+    }
+    return set;
+  };
+  let cur = close(new Set([0]));
+  for (let p = 0; p < input.length; p++) {
+    const ch = input[p];
+    const next = new Set();
+    for (const i of cur) {
+      if (i >= n) continue;
+      const t = toks[i];
+      if (t.k === 'lit' && t.c === ch) next.add(i + 1);
+      else if (t.k === 'star' && ch !== '/') next.add(i);
+      else if (t.k === 'dstar' && !LINE_TERMINATOR.test(ch)) next.add(i);
+    }
+    if (next.size === 0) return false;
+    cur = close(next);
+  }
+  return cur.has(n);
+}
+
+// Tokenise the legacy glob->regex source so it can run on a linear NFA.
+function compileGlob(pattern) {
+  const src = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__DOUBLESTAR__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__DOUBLESTAR__/g, '.*');
+  // Validation only: keeps the legacy SyntaxError for malformed globs (never matched with).
   // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-  const re = new RegExp(
-    '^' +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*/g, '__DOUBLESTAR__')
-        .replace(/\*/g, '[^/]*')
-        .replace(/__DOUBLESTAR__/g, '.*') +
-      '$',
-  );
-  return re.test(input);
+  new RegExp('^' + src + '$');
+  const toks = [];
+  for (let i = 0; i < src.length; ) {
+    let t;
+    if (src.startsWith('[^/]*', i)) {
+      t = { k: 'star' };
+      i += 5;
+    } else if (src.startsWith('.*', i)) {
+      t = { k: 'dstar' };
+      i += 2;
+    } else if (src[i] === '\\') {
+      t = { k: 'lit', c: src[i + 1] };
+      i += 2;
+    } else {
+      t = { k: 'lit', c: src[i] };
+      i += 1;
+    }
+    if (src[i] === '?') {
+      t.opt = true;
+      i++;
+      if (src[i] === '?') i++;
+    }
+    toks.push(t);
+  }
+  return toks;
 }
 
 /**

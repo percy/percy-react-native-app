@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { performance } from 'node:perf_hooks';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -44,6 +45,22 @@ describe('extractStoriesField', () => {
 });
 
 describe('extractTitle', () => {
+  it('stays fast on pathological input with no title (PER-9342)', () => {
+    const t0 = performance.now();
+    expect(extractTitle('export default {'.repeat(32000))).toBeNull();
+    expect(extractTitle('const a = {\n'.repeat(32000))).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
+  it('finds a title after nested braces', () => {
+    expect(extractTitle(`export default { parameters: { a: { b: 1 } }, title: 'Deep/One' };`)).toBe('Deep/One');
+  });
+
+  it('keeps the legacy behaviour of pairing the first `const x = {` with `export default x`', () => {
+    const src = `const a = {}; const meta = { title: 'T' }; export default a;`;
+    expect(extractTitle(src)).toBe('T');
+  });
+
   it('extracts title from inline default export', () => {
     const src = `export default { title: 'Foo/Bar', component: X };`;
     expect(extractTitle(src)).toBe('Foo/Bar');
